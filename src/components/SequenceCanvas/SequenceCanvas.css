@@ -32,24 +32,24 @@
   animation: none;
 }
 
-/* Breakpoint gutter dot — hollow by default, filled red when set */
+/* Breakpoint gutter dot — always visible as a faint ring; filled red when set */
 .seq-card__bp {
   flex-shrink: 0;
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   padding: 0;
   border: none;
   background: transparent;
-  color: transparent;
+  color: #C0C0C0;
   font-size: 11px;
-  line-height: 14px;
+  line-height: 18px;
   text-align: center;
   cursor: pointer;
   border-radius: 50%;
 }
-.seq-card__bp:hover { color: #F4A8A0; }
+.seq-card__bp:hover { color: #F4A8A0; background: #FDECEA; }
 .seq-card__bp--set { color: #C50F1F; }
-.seq-card__bp--set:hover { color: #E01B2E; }
+.seq-card__bp--set:hover { color: #E01B2E; background: #FDECEA; }
 
 .seq-card__pause-arrow {
   flex-shrink: 0;
