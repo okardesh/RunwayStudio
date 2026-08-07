@@ -25,6 +25,7 @@ interface WorkflowState {
   executingNodeId: string | null;
   status: WorkflowStatus;
   projectName: string;
+  filePath: string | null; // last path Save wrote to / Open read from — repeat Save overwrites this
 
   onNodesChange: (changes: NodeChange[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
@@ -45,7 +46,8 @@ interface WorkflowState {
   setProjectName: (name: string) => void;
   clearWorkflow: () => void;
   setExecutingNodeId: (id: string | null) => void;
-  loadWorkflow: (data: { nodes: Node<WorkflowNodeData>[]; edges: Edge[]; variables: WorkflowVariable[]; projectName: string }) => void;
+  loadWorkflow: (data: { nodes: Node<WorkflowNodeData>[]; edges: Edge[]; variables: WorkflowVariable[]; projectName: string }, filePath?: string | null) => void;
+  setFilePath: (filePath: string | null) => void;
 }
 
 export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
@@ -56,6 +58,7 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
   executingNodeId: null,
   status: 'idle',
   projectName: 'New Workflow',
+  filePath: null,
 
   onNodesChange: (changes) =>
     set((state) => ({
@@ -257,11 +260,12 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
       selectedNodeId: null,
       executingNodeId: null,
       status: 'idle',
+      filePath: null,
     }),
 
   setExecutingNodeId: (id) => set({ executingNodeId: id }),
 
-  loadWorkflow: (data) =>
+  loadWorkflow: (data, filePath = null) =>
     set({
       nodes: data.nodes,
       edges: data.edges,
@@ -270,7 +274,10 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
       selectedNodeId: null,
       executingNodeId: null,
       status: 'idle',
+      filePath,
     }),
+
+  setFilePath: (filePath) => set({ filePath }),
 }), {
   name: 'rpa-studio-workflow',
   partialize: (state) => ({
@@ -278,5 +285,6 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
     edges: state.edges,
     variables: state.variables,
     projectName: state.projectName,
+    filePath: state.filePath,
   }),
 }));

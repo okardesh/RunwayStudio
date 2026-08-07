@@ -69,21 +69,45 @@ export function Toolbar({ activeTab }: ToolbarProps) {
   const handleStepOver = useCallback(() => resumeDebug('step-over'), []);
   const handleRestart = useCallback(() => { requestStop(); setTimeout(() => startRun(true), 60); }, [startRun]);
 
-  const handleSave = useCallback(() => {
-    const { nodes, edges, variables, projectName: name } = useWorkflowStore.getState();
-    const blob = new Blob(
-      [JSON.stringify({ nodes, edges, variables, projectName: name }, null, 2)],
-      { type: 'application/json' }
-    );
+  const isElectron = () =>
+    typeof window !== 'undefined' && 'electronAPI' in window && typeof (window as any).electronAPI?.saveWorkflow === 'function';
+
+  const handleSave = useCallback(async () => {
+    const { nodes, edges, variables, projectName: name, filePath } = useWorkflowStore.getState();
+    const content = JSON.stringify({ nodes, edges, variables, projectName: name }, null, 2);
+    const defaultName = `${name.replace(/\s+/g, '_')}.rpa.json`;
+
+    if (isElectron()) {
+      // Overwrites filePath directly once one is known (from a prior Save or Open);
+      // otherwise prompts once via a native Save dialog and remembers the choice.
+      const result = await (window as any).electronAPI.saveWorkflow(content, filePath, defaultName);
+      if (!result.cancelled) useWorkflowStore.getState().setFilePath(result.path);
+      return;
+    }
+
+    // Browser-preview fallback — no filesystem access, so this is always a fresh download.
+    const blob = new Blob([content], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${name.replace(/\s+/g, '_')}.rpa.json`;
+    a.download = defaultName;
     a.click();
     URL.revokeObjectURL(url);
   }, []);
 
-  const handleLoad = useCallback(() => fileInputRef.current?.click(), []);
+  const handleLoad = useCallback(async () => {
+    if (isElectron()) {
+      const result = await (window as any).electronAPI.openWorkflow();
+      if (result.cancelled) return;
+      try {
+        useWorkflowStore.getState().loadWorkflow(JSON.parse(result.content), result.path);
+      } catch {
+        alert('Invalid workflow file.');
+      }
+      return;
+    }
+    fileInputRef.current?.click();
+  }, []);
 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

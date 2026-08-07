@@ -1,7 +1,8 @@
-import { app, BrowserWindow, Menu, ipcMain, desktopCapturer } from 'electron'
+import { app, BrowserWindow, Menu, ipcMain, desktopCapturer, dialog } from 'electron'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import fs from 'node:fs'
 import { executeActivity } from './automation/index.js'
 import { pickDesktopElement } from './automation/picker.js'
 
@@ -92,6 +93,33 @@ app.whenReady().then(() => {
       win?.restore();
       win?.focus();
     }
+  });
+
+  // Save: writes straight to an already-known path (repeat saves overwrite in place);
+  // with no path yet, prompts once via a native Save dialog and remembers the choice.
+  ipcMain.handle('save-workflow', async (_e, content: string, existingPath: string | null, defaultName: string) => {
+    let targetPath = existingPath;
+    if (!targetPath) {
+      const result = await dialog.showSaveDialog(win!, {
+        defaultPath: defaultName,
+        filters: [{ name: 'RPA Workflow', extensions: ['json'] }],
+      });
+      if (result.canceled || !result.filePath) return { cancelled: true };
+      targetPath = result.filePath;
+    }
+    fs.writeFileSync(targetPath, content, { encoding: 'utf8' });
+    return { path: targetPath };
+  });
+
+  ipcMain.handle('open-workflow', async () => {
+    const result = await dialog.showOpenDialog(win!, {
+      filters: [{ name: 'RPA Workflow', extensions: ['json'] }],
+      properties: ['openFile'],
+    });
+    if (result.canceled || result.filePaths.length === 0) return { cancelled: true };
+    const filePath = result.filePaths[0];
+    const content = fs.readFileSync(filePath, { encoding: 'utf8' });
+    return { path: filePath, content };
   });
 
   createWindow();

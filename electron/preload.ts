@@ -21,4 +21,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       controlType?: string;
       selector?: string;
     }>,
+  saveWorkflow: (content: string, existingPath: string | null, defaultName: string) =>
+    ipcRenderer.invoke('save-workflow', content, existingPath, defaultName) as Promise<
+      { cancelled: true } | { path: string }
+    >,
+  openWorkflow: () =>
+    ipcRenderer.invoke('open-workflow') as Promise<
+      { cancelled: true } | { path: string; content: string }
+    >,
 })
