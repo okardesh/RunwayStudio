@@ -26,6 +26,7 @@ interface WorkflowState {
   status: WorkflowStatus;
   projectName: string;
   filePath: string | null; // last path Save wrote to / Open read from — repeat Save overwrites this
+  clipboard: { node: Node<WorkflowNodeData>; children: Node<WorkflowNodeData>[] } | null; // Ctrl+C target, not persisted
 
   onNodesChange: (changes: NodeChange[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
@@ -48,6 +49,8 @@ interface WorkflowState {
   setExecutingNodeId: (id: string | null) => void;
   loadWorkflow: (data: { nodes: Node<WorkflowNodeData>[]; edges: Edge[]; variables: WorkflowVariable[]; projectName: string }, filePath?: string | null) => void;
   setFilePath: (filePath: string | null) => void;
+  copySelectedNode: () => void;
+  pasteNode: () => void;
 }
 
 export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
@@ -59,6 +62,7 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
   status: 'idle',
   projectName: 'New Workflow',
   filePath: null,
+  clipboard: null,
 
   onNodesChange: (changes) =>
     set((state) => ({
@@ -278,6 +282,64 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
     }),
 
   setFilePath: (filePath) => set({ filePath }),
+
+  copySelectedNode: () =>
+    set((state) => {
+      const node = state.nodes.find((n) => n.id === state.selectedNodeId);
+      if (!node) return state;
+      const children = (node.data.childIds ?? [])
+        .map((id) => state.nodes.find((n) => n.id === id))
+        .filter(Boolean) as Node<WorkflowNodeData>[];
+      return { clipboard: { node, children } };
+    }),
+
+  pasteNode: () =>
+    set((state) => {
+      if (!state.clipboard) return state;
+      const { node: srcNode, children: srcChildren } = state.clipboard;
+      // The copied node (or its container, if a child was copied) might have been deleted since.
+      const parentId = srcNode.data.parentId;
+      if (parentId && !state.nodes.some((n) => n.id === parentId)) return state;
+
+      const newId = uuidv4();
+      const idMap = new Map<string, string>();
+      srcChildren.forEach((c) => idMap.set(c.id, uuidv4()));
+
+      const newNode: Node<WorkflowNodeData> = {
+        ...srcNode,
+        id: newId,
+        position: { x: srcNode.position.x + 24, y: srcNode.position.y + 24 },
+        data: {
+          ...srcNode.data,
+          properties: { ...srcNode.data.properties },
+          childIds: srcNode.data.isContainer ? srcChildren.map((c) => idMap.get(c.id)!) : undefined,
+        },
+      };
+      const newChildren: Node<WorkflowNodeData>[] = srcChildren.map((c) => ({
+        ...c,
+        id: idMap.get(c.id)!,
+        data: { ...c.data, properties: { ...c.data.properties }, parentId: newId },
+      }));
+
+      let nodes: Node<WorkflowNodeData>[];
+      if (parentId) {
+        // Copied node was a child — paste as a new sibling right after the original.
+        const parent = state.nodes.find((n) => n.id === parentId)!;
+        const childIds = [...(parent.data.childIds ?? [])];
+        const origIdx = childIds.indexOf(srcNode.id);
+        childIds.splice(origIdx === -1 ? childIds.length : origIdx + 1, 0, newId);
+        nodes = state.nodes.map((n) => (n.id === parentId ? { ...n, data: { ...n.data, childIds } } : n));
+        nodes = [...nodes, newNode, ...newChildren];
+      } else {
+        // Top-level node — paste right after the original.
+        nodes = [...state.nodes];
+        const origIdx = nodes.findIndex((n) => n.id === srcNode.id);
+        nodes.splice(origIdx === -1 ? nodes.length : origIdx + 1, 0, newNode);
+        nodes = [...nodes, ...newChildren];
+      }
+
+      return { nodes, selectedNodeId: newId };
+    }),
 }), {
   name: 'rpa-studio-workflow',
   partialize: (state) => ({
