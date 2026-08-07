@@ -1,0 +1,127 @@
+import type { ActivityDefinition } from '../../types';
+
+export const waitVerifyActivities: ActivityDefinition[] = [
+  {
+    id: 'wait-element',
+    name: 'Wait For Element',
+    category: 'waitVerify',
+    icon: '⏳',
+    description: 'Waits until an element is present in the DOM',
+    color: '#558B2F',
+    nodeType: 'activity',
+    properties: [
+      { name: 'selector', label: 'Selector', type: 'string', defaultValue: '', required: true },
+      { name: 'state', label: 'Wait Until', type: 'select', defaultValue: 'visible', options: [
+        { label: 'Visible', value: 'visible' },
+        { label: 'Present in DOM', value: 'present' },
+        { label: 'Enabled', value: 'enabled' },
+        { label: 'Clickable', value: 'clickable' },
+      ]},
+      { name: 'timeout', label: 'Timeout (ms)', type: 'number', defaultValue: 30000 },
+    ],
+  },
+  {
+    id: 'wait-element-vanish',
+    name: 'Wait Element Vanish',
+    category: 'waitVerify',
+    icon: '⏳',
+    description: 'Waits until an element disappears from the DOM',
+    color: '#558B2F',
+    nodeType: 'activity',
+    properties: [
+      { name: 'selector', label: 'Selector', type: 'string', defaultValue: '', required: true },
+      { name: 'timeout', label: 'Timeout (ms)', type: 'number', defaultValue: 30000 },
+    ],
+  },
+  {
+    id: 'wait-text',
+    name: 'Wait For Text',
+    category: 'waitVerify',
+    icon: '⏳',
+    description: 'Waits until an element contains expected text',
+    color: '#558B2F',
+    nodeType: 'activity',
+    properties: [
+      { name: 'selector', label: 'Selector', type: 'string', defaultValue: '', required: true },
+      { name: 'text', label: 'Expected Text', type: 'expression', defaultValue: '', required: true },
+      { name: 'timeout', label: 'Timeout (ms)', type: 'number', defaultValue: 30000 },
+    ],
+  },
+  {
+    id: 'wait-page-load',
+    name: 'Wait For Page Load',
+    category: 'waitVerify',
+    icon: '⏱',
+    description: 'Waits for the browser page to finish loading',
+    color: '#558B2F',
+    nodeType: 'activity',
+    properties: [
+      { name: 'timeout', label: 'Timeout (ms)', type: 'number', defaultValue: 30000 },
+    ],
+  },
+  {
+    id: 'element-exists',
+    name: 'Element Exists',
+    category: 'waitVerify',
+    icon: '🔎',
+    description: 'Checks if an element exists and stores the result',
+    color: '#558B2F',
+    nodeType: 'activity',
+    properties: [
+      { name: 'selector', label: 'Selector', type: 'string', defaultValue: '', required: true },
+      { name: 'output', label: 'Output Variable', type: 'variable', defaultValue: 'exists', required: true },
+    ],
+  },
+  {
+    id: 'assert-text',
+    name: 'Assert Text',
+    category: 'waitVerify',
+    icon: '✅',
+    description: 'Asserts that an element contains the expected text (throws on failure)',
+    color: '#558B2F',
+    nodeType: 'activity',
+    properties: [
+      { name: 'selector', label: 'Selector', type: 'string', defaultValue: '', required: true },
+      { name: 'expected', label: 'Expected Text', type: 'expression', defaultValue: '', required: true },
+      { name: 'matchType', label: 'Match Type', type: 'select', defaultValue: 'Contains', options: [
+        { label: 'Contains', value: 'Contains' },
+        { label: 'Exact Match', value: 'Equals' },
+        { label: 'Starts With', value: 'StartsWith' },
+        { label: 'Regex', value: 'Regex' },
+      ]},
+    ],
+  },
+  {
+    id: 'assert-title',
+    name: 'Assert Page Title',
+    category: 'waitVerify',
+    icon: '✅',
+    description: 'Asserts that the page title matches the expected value',
+    color: '#558B2F',
+    nodeType: 'activity',
+    properties: [
+      { name: 'expected', label: 'Expected Title', type: 'expression', defaultValue: '', required: true },
+      { name: 'matchType', label: 'Match Type', type: 'select', defaultValue: 'Contains', options: [
+        { label: 'Contains', value: 'Contains' },
+        { label: 'Exact Match', value: 'Equals' },
+      ]},
+    ],
+  },
+  {
+    id: 'assert-url',
+    name: 'Assert URL',
+    category: 'waitVerify',
+    icon: '✅',
+    description: 'Asserts that the current URL matches the expected value',
+    color: '#558B2F',
+    nodeType: 'activity',
+    properties: [
+      { name: 'expected', label: 'Expected URL', type: 'expression', defaultValue: '', required: true },
+      { name: 'matchType', label: 'Match Type', type: 'select', defaultValue: 'Contains', options: [
+        { label: 'Contains', value: 'Contains' },
+        { label: 'Exact Match', value: 'Equals' },
+        { label: 'Starts With', value: 'StartsWith' },
+      ]},
+    ],
+  },
+];

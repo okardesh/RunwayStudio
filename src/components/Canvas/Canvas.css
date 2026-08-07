@@ -1,0 +1,76 @@
+.canvas-wrapper {
+  flex: 1;
+  position: relative;
+  background: #FAFBFC;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.canvas-empty-hint {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.canvas-empty-hint__icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.15;
+}
+
+.canvas-empty-hint p {
+  color: #BBB;
+  font-size: 13px;
+  max-width: 280px;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+/* React Flow overrides */
+.react-flow__controls {
+  background: white !important;
+  border: 1px solid #D0D0D0 !important;
+  border-radius: 4px !important;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
+}
+
+.react-flow__controls-button {
+  background: white !important;
+  border: none !important;
+  border-bottom: 1px solid #D0D0D0 !important;
+  fill: #666 !important;
+  color: #666 !important;
+  width: 32px !important;
+  height: 32px !important;
+  cursor: pointer !important;
+}
+
+.react-flow__controls-button:hover {
+  background: #F5F5F5 !important;
+  fill: #0078D4 !important;
+  color: #0078D4 !important;
+}
+
+.react-flow__controls-button:last-child {
+  border-bottom: none !important;
+}
+
+.react-flow__minimap {
+  bottom: 12px !important;
+  right: 12px !important;
+}
+
+.react-flow__edge-path {
+  stroke: #0078D4;
+  stroke-width: 2;
+}
+
+.react-flow__connection-line {
+  stroke: #0078D4;
+  stroke-width: 2;
+}

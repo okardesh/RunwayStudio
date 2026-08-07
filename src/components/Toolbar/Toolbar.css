@@ -1,0 +1,281 @@
+/* ── Ribbon bar ── */
+.ribbon {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  height: 66px;
+  padding: 0 2px;
+  background: #F3F3F3;
+  border-bottom: 1px solid #C8C8C8;
+  flex-shrink: 0;
+  user-select: none;
+  overflow: hidden;
+}
+
+/* group = vertical flex: buttons row on top, label on bottom */
+.ribbon__group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px 3px 2px;
+}
+
+.ribbon__btns {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 1px;
+  flex: 1;
+}
+
+.ribbon__group-label {
+  font-size: 9px;
+  font-weight: 400;
+  color: #888;
+  letter-spacing: 0.2px;
+  margin-top: 2px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.ribbon__sep {
+  width: 1px;
+  background: #CCCCCC;
+  margin: 6px 1px;
+  flex-shrink: 0;
+  align-self: stretch;
+}
+
+.ribbon__spacer { flex: 1; }
+
+/* ── Ribbon button ── */
+.rbn-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 3px 6px;
+  min-width: 40px;
+  height: 46px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.08s, border-color 0.08s;
+  flex-shrink: 0;
+}
+
+.rbn-btn:hover:not(:disabled) { background: #E3EEFF; border-color: #B8D0EA; }
+.rbn-btn:active:not(:disabled) { background: #CCE3F5; border-color: #7BB1D4; }
+.rbn-btn.active { background: #D0E6F5; border-color: #5599CC; }
+.rbn-btn:disabled { opacity: 0.35; cursor: default; }
+
+.rbn-btn__icon { font-size: 14px; line-height: 1; display: block; }
+.rbn-btn__icon--lg { font-size: 18px; }
+
+.rbn-btn__label {
+  font-size: 9px;
+  font-weight: 400;
+  color: #444;
+  text-align: center;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* Run */
+.rbn-btn--run .rbn-btn__icon,
+.rbn-btn--run .rbn-btn__label { color: #107C10; }
+.rbn-btn--run:not(:disabled):hover { background: #E8F5E9; border-color: #A5D6A7; }
+.rbn-btn--run.active,
+.rbn-btn--run:not(:disabled):active { background: #C8E6C9; border-color: #107C10; }
+
+/* Stop */
+.rbn-btn--stop .rbn-btn__icon,
+.rbn-btn--stop .rbn-btn__label { color: #C50F1F; }
+.rbn-btn--stop:not(:disabled):hover { background: #FDECEA; border-color: #F4A8A0; }
+
+/* Debug */
+.rbn-btn--debug .rbn-btn__icon,
+.rbn-btn--debug .rbn-btn__label { color: #7A5900; }
+.rbn-btn--debug:not(:disabled):hover { background: #FFF8E1; border-color: #FFCC80; }
+.rbn-btn--debug.active { background: #FFF3CD; border-color: #FFC107; }
+
+/* Recording */
+.rbn-btn--accent .rbn-btn__icon { color: #C50F1F; }
+.rbn-btn--accent .rbn-btn__label { color: #C50F1F; }
+.rbn-btn--accent:not(:disabled):hover { background: #FDECEA; border-color: #F4A8A0; }
+
+/* Project name chip */
+.ribbon__project {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  flex-shrink: 0;
+}
+
+.ribbon__project-name {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  color: #555;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 8px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s, border-color 0.1s;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ribbon__project-name:hover { background: #E8E8E8; border-color: #C0C0C0; }
+
+.ribbon__project-input {
+  border: 1px solid #0078D4;
+  border-radius: 2px;
+  color: #333;
+  font-size: 11px;
+  padding: 3px 8px;
+  outline: none;
+  width: 150px;
+  font-family: inherit;
+  background: white;
+}
+
+
+/* group = vertical flex: buttons row on top, label on bottom */
+.ribbon__group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px 4px 3px;
+}
+
+.ribbon__btns {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 1px;
+  flex: 1;
+}
+
+.ribbon__group-label {
+  font-size: 9px;
+  font-weight: 400;
+  color: #999;
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+  margin-top: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.ribbon__sep {
+  width: 1px;
+  background: #D8D8D8;
+  margin: 8px 2px;
+  flex-shrink: 0;
+  align-self: stretch;
+}
+
+.ribbon__spacer { flex: 1; }
+
+/* ── Ribbon button ── */
+.rbn-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 3px 7px;
+  min-width: 44px;
+  height: 44px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s, border-color 0.1s;
+  flex-shrink: 0;
+}
+
+.rbn-btn:hover:not(:disabled) { background: #E5EFF8; border-color: #C0D4E8; }
+.rbn-btn:active:not(:disabled) { background: #CCE3F5; }
+.rbn-btn.active { background: #D6EAF8; border-color: #0078D4; }
+.rbn-btn:disabled { opacity: 0.38; cursor: default; }
+
+.rbn-btn__icon { font-size: 14px; line-height: 1; display: block; }
+.rbn-btn__icon--lg { font-size: 17px; }
+
+.rbn-btn__label {
+  font-size: 9px;
+  font-weight: 500;
+  color: #555;
+  text-align: center;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* Run */
+.rbn-btn--run .rbn-btn__icon,
+.rbn-btn--run .rbn-btn__label { color: #107C10; }
+.rbn-btn--run:not(:disabled):hover { background: #E8F5E9; border-color: #A5D6A7; }
+.rbn-btn--run.active,
+.rbn-btn--run:not(:disabled):active { background: #C8E6C9; border-color: #107C10; }
+
+/* Stop */
+.rbn-btn--stop .rbn-btn__icon,
+.rbn-btn--stop .rbn-btn__label { color: #C50F1F; }
+.rbn-btn--stop:not(:disabled):hover { background: #FDECEA; border-color: #F4A8A0; }
+
+/* Debug */
+.rbn-btn--debug .rbn-btn__icon,
+.rbn-btn--debug .rbn-btn__label { color: #7A5900; }
+.rbn-btn--debug:not(:disabled):hover { background: #FFF8E1; border-color: #FFCC80; }
+.rbn-btn--debug.active { background: #FFF3CD; border-color: #FFC107; }
+
+/* Recording */
+.rbn-btn--accent .rbn-btn__icon { color: #C50F1F; }
+.rbn-btn--accent .rbn-btn__label { color: #C50F1F; }
+.rbn-btn--accent:not(:disabled):hover { background: #FDECEA; border-color: #F4A8A0; }
+
+/* Project name chip */
+.ribbon__project {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  flex-shrink: 0;
+}
+
+.ribbon__project-name {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: #555;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 8px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s, border-color 0.1s;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ribbon__project-name:hover { background: #EBEBEB; border-color: #C8C8C8; }
+
+.ribbon__project-input {
+  border: 1px solid #0078D4;
+  border-radius: 3px;
+  color: #333;
+  font-size: 11px;
+  padding: 3px 8px;
+  outline: none;
+  width: 150px;
+  font-family: inherit;
+  background: white;
+}

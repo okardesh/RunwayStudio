@@ -1,0 +1,27 @@
+.end-node {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 14px;
+  background: linear-gradient(135deg, #DA3B01, #E81E63);
+  border: 1.5px solid #DA3B01;
+  border-radius: 20px;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  cursor: default;
+  user-select: none;
+  box-shadow: 0 1px 4px rgba(218, 59, 1, 0.2);
+}
+
+.end-node__icon {
+  font-size: 9px;
+}
+
+.end-node__handle {
+  background: #DA3B01 !important;
+  border: 2px solid white !important;
+  width: 10px !important;
+  height: 10px !important;
+}

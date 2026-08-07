@@ -1,0 +1,82 @@
+.decision-wrapper {
+  width: 110px;
+  height: 70px;
+  position: relative;
+}
+
+/* Diamond via clip-path — handles sit exactly at the four vertices */
+.decision-shape {
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+  background: linear-gradient(135deg, #FFB900, #FF8C00);
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.1));
+  transition: filter 0.15s;
+}
+
+.decision-wrapper.selected .decision-shape {
+  filter: drop-shadow(0 0 0 1px white)
+          drop-shadow(0 0 0 3px #0078D4)
+          drop-shadow(0 2px 6px rgba(0, 120, 212, 0.2));
+}
+
+.decision-wrapper.executing .decision-shape {
+  animation: dec-pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes dec-pulse {
+  0%, 100% { filter: drop-shadow(0 0 0 1px white) drop-shadow(0 0 0 3px #107C10) drop-shadow(0 2px 6px rgba(16, 124, 16, 0.15)); }
+  50%       { filter: drop-shadow(0 0 0 1px white) drop-shadow(0 0 0 5px rgba(16, 124, 16, 0.2)); }
+}
+
+.decision-content {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.decision-content__icon {
+  font-size: 12px;
+  line-height: 1;
+  color: white;
+}
+
+.decision-content__label {
+  font-size: 9px;
+  font-weight: 700;
+  color: white;
+  letter-spacing: 0.2px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  white-space: nowrap;
+}
+
+.decision-handle {
+  background: #FFB900 !important;
+  border: 2px solid white !important;
+  width: 10px !important;
+  height: 10px !important;
+  z-index: 2;
+}
+
+.decision-handle--true  { background: #107C10 !important; }
+.decision-handle--false { background: #DA3B01 !important; }
+
+/* Branch labels outside the wrapper — overflow:visible is default */
+.decision-branch {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 9px;
+  font-weight: 800;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.decision-branch--true  { right: -18px; color: #107C10; }
+.decision-branch--false { left: -18px;  color: #DA3B01; }

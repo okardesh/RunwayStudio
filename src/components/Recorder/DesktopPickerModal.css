@@ -1,0 +1,40 @@
+.dpick-modal {
+  width: 560px;
+  height: auto;
+  max-height: 80vh;
+}
+
+.dpick-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+
+.dpick-hint {
+  text-align: center;
+  max-width: 380px;
+}
+
+.dpick-hint__icon { font-size: 40px; margin-bottom: 10px; }
+
+.dpick-hint p {
+  color: #555;
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 4px 0;
+}
+
+.dpick-hint__sub { color: #999 !important; font-size: 12px !important; margin-top: 10px !important; }
+
+.dpick-hint kbd {
+  background: #F0F0F0;
+  border: 1px solid #D0D0D0;
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-family: 'Consolas', monospace;
+  font-size: 11px;
+}
+
+.dpick-hint--error p { color: #C0392B; }

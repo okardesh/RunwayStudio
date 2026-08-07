@@ -1,0 +1,222 @@
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: #F0F0F0;
+  color: #1E1E1E;
+  overflow: hidden;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Title bar (UiPath-style blue, slim) ── */
+.app-header {
+  background: #1464A5;
+  height: 28px;
+  padding: 0 0 0 6px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  user-select: none;
+  -webkit-app-region: drag;
+  gap: 0;
+}
+
+.app-header__brand {
+  display: flex;
+  align-items: center;
+  padding-right: 4px;
+  flex-shrink: 0;
+}
+
+.app-header__icon {
+  font-size: 13px;
+  color: white;
+  opacity: 0.9;
+}
+
+/* Design / Debug tabs in the title bar */
+.app-header__tab {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.80);
+  font-size: 12px;
+  font-weight: 400;
+  padding: 0 14px;
+  cursor: pointer;
+  height: 100%;
+  font-family: inherit;
+  border-bottom: 2px solid transparent;
+  transition: background 0.1s, color 0.1s;
+  -webkit-app-region: no-drag;
+  flex-shrink: 0;
+}
+.app-header__tab:hover {
+  background: rgba(0, 0, 0, 0.15);
+  color: white;
+}
+.app-header__tab--active {
+  color: white;
+  border-bottom-color: white;
+  font-weight: 600;
+}
+
+/* Center search bar */
+.app-header__search-wrap {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  padding: 0 20px;
+  -webkit-app-region: no-drag;
+}
+
+.app-header__search {
+  width: 200px;
+  max-width: 100%;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 2px;
+  color: white;
+  font-size: 11px;
+  font-family: inherit;
+  padding: 0 8px;
+  outline: none;
+}
+.app-header__search::placeholder { color: rgba(255, 255, 255, 0.65); }
+.app-header__search:focus { background: rgba(255, 255, 255, 0.25); border-color: rgba(255, 255, 255, 0.7); }
+
+/* Right side of header */
+.app-header__right {
+  padding: 0 8px;
+  flex-shrink: 0;
+}
+.app-header__project {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.80);
+}
+
+/* ── Body: workspace + bottom panel ── */
+.app__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.app__workspace {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+
+.app-header__left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 1;
+}
+
+.app-header__icon {
+  font-size: 14px;
+  color: white;
+}
+
+.app-header__brand {
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+  letter-spacing: 0.2px;
+}
+
+.app-header__center {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.app-header__project {
+  font-size: 12px;
+  color: rgba(255,255,255,0.85);
+  font-weight: 400;
+}
+
+.app-header__right {
+  margin-left: auto;
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  -webkit-app-region: no-drag;
+}
+
+.app-tab {
+  background: rgba(0,0,0,0.15);
+  border: none;
+  color: rgba(255,255,255,0.75);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0 20px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: background 0.12s, color 0.12s;
+  font-family: inherit;
+  letter-spacing: 0.5px;
+  height: 100%;
+}
+
+.app-tab:hover {
+  background: rgba(0,0,0,0.2);
+  color: white;
+}
+
+.app-tab--active {
+  background: transparent;
+  color: white;
+  border-bottom-color: white;
+}
+
+.app__workspace {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.app__execute {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.app__execute-output {
+  width: 340px;
+  min-width: 240px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
