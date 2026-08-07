@@ -125,6 +125,23 @@ public class Win32Mouse {
 "@ -EA SilentlyContinue }
 `;
 
+// PowerShell lines that press+release the right mouse button(s) for a click kind.
+// Assumes the cursor is already positioned (SetCursorPos) and WIN32_MOUSE is loaded.
+function mouseEventCalls(kind: 'Left' | 'Right' | 'Double' | 'Middle' | 'Hover'): string {
+  if (kind === 'Hover') return '';
+  if (kind === 'Right') return `[Win32Mouse]::mouse_event([Win32Mouse]::RD, 0, 0, 0, 0)
+[Win32Mouse]::mouse_event([Win32Mouse]::RU, 0, 0, 0, 0)`;
+  if (kind === 'Middle') return `[Win32Mouse]::mouse_event([Win32Mouse]::MD, 0, 0, 0, 0)
+[Win32Mouse]::mouse_event([Win32Mouse]::MU, 0, 0, 0, 0)`;
+  if (kind === 'Double') return `[Win32Mouse]::mouse_event([Win32Mouse]::LD, 0, 0, 0, 0)
+[Win32Mouse]::mouse_event([Win32Mouse]::LU, 0, 0, 0, 0)
+Start-Sleep -Milliseconds 40
+[Win32Mouse]::mouse_event([Win32Mouse]::LD, 0, 0, 0, 0)
+[Win32Mouse]::mouse_event([Win32Mouse]::LU, 0, 0, 0, 0)`;
+  return `[Win32Mouse]::mouse_event([Win32Mouse]::LD, 0, 0, 0, 0)
+[Win32Mouse]::mouse_event([Win32Mouse]::LU, 0, 0, 0, 0)`;
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export async function runDesktopActivity(id: string, props: Record<string, unknown>): Promise<Result> {
@@ -154,31 +171,51 @@ $wnd.SetFocus()
         return { success: true, log: 'Desktop target — nothing to close' };
 
       // ── Mouse ──
-      case 'click': {
-        const ct = String(props.clickType ?? 'Left');
+      // Click(clickType) plus the standalone Right Click / Double Click / Hover activities
+      // all boil down to: find the element (or use raw x,y), move there, press.
+      case 'click':
+      case 'right-click':
+      case 'double-click':
+      case 'hover': {
+        const kind: 'Left' | 'Right' | 'Double' | 'Middle' | 'Hover' =
+          id === 'right-click' ? 'Right' :
+          id === 'double-click' ? 'Double' :
+          id === 'hover' ? 'Hover' :
+          (String(props.clickType ?? 'Left') as 'Left' | 'Right' | 'Double' | 'Middle');
+
+        const mouseDownUp = mouseEventCalls(kind);
+        // Left clicks try UIAutomation's InvokePattern first — it works even when the
+        // element is occluded or off-screen. Every other kind has no InvokePattern
+        // equivalent, so it always simulates a real mouse action at the element's center.
+        const canInvoke = kind === 'Left';
+
         if (sel.startsWith('window:')) {
-          // Click via UIAutomation InvokePattern
-          const script = buildFinder(sel) + `
+          const script = buildFinder(sel) + (canInvoke ? `
 $pat = $el.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
 if ($pat) { $pat.Invoke() } else {
   $r = $el.Current.BoundingRectangle
   $cx = [int]($r.Left + $r.Width/2); $cy = [int]($r.Top + $r.Height/2)
   ${WIN32_MOUSE}
   [Win32Mouse]::SetCursorPos($cx, $cy)
-  [Win32Mouse]::mouse_event([Win32Mouse]::LD, 0, 0, 0, 0)
-  [Win32Mouse]::mouse_event([Win32Mouse]::LU, 0, 0, 0, 0)
-}`;
+  ${mouseDownUp}
+}` : `
+$r = $el.Current.BoundingRectangle
+$cx = [int]($r.Left + $r.Width/2); $cy = [int]($r.Top + $r.Height/2)
+${WIN32_MOUSE}
+[Win32Mouse]::SetCursorPos($cx, $cy)
+${mouseDownUp}`);
           await ps(script);
         } else {
-          // Click at screen coordinates (x,y) e.g. selector = "400,300"
+          // Raw screen coordinates, e.g. selector = "400,300"
           const [x, y] = sel.split(',').map(Number);
           if (!isNaN(x) && !isNaN(y)) {
             await ps(`${WIN32_MOUSE}
 [Win32Mouse]::SetCursorPos(${x}, ${y})
-[Win32Mouse]::mouse_event([Win32Mouse]::${ct === 'Right' ? 'RD],[Win32Mouse]::[Win32Mouse]::RU' : 'LD,[Win32Mouse]::LD,[Win32Mouse]::LU'}, 0, 0, 0, 0)`);
+${mouseDownUp}`);
           }
         }
-        return { success: true, log: `Click → ${sel}` };
+        const label = id === 'right-click' ? 'Right-click' : id === 'double-click' ? 'Double-click' : id === 'hover' ? 'Hover' : 'Click';
+        return { success: true, log: `${label} → ${sel}` };
       }
 
       // ── Keyboard ──
