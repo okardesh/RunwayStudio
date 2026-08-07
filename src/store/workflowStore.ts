@@ -36,6 +36,7 @@ interface WorkflowState {
   moveChildNode: (parentId: string, from: number, to: number) => void;
   deleteNode: (nodeId: string) => void;
   updateNodeProperties: (nodeId: string, properties: Record<string, unknown>) => void;
+  toggleBreakpoint: (nodeId: string) => void;
   setSelectedNode: (nodeId: string | null) => void;
   addVariable: (variable: Omit<WorkflowVariable, 'id'>) => void;
   removeVariable: (variableId: string) => void;
@@ -217,6 +218,13 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
     set((state) => ({
       nodes: state.nodes.map((n) =>
         n.id === nodeId ? { ...n, data: { ...n.data, properties } } : n
+      ),
+    })),
+
+  toggleBreakpoint: (nodeId) =>
+    set((state) => ({
+      nodes: state.nodes.map((n) =>
+        n.id === nodeId ? { ...n, data: { ...n.data, breakpoint: !n.data.breakpoint } } : n
       ),
     })),
 

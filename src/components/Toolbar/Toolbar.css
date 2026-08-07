@@ -242,6 +242,17 @@
 .rbn-btn--accent .rbn-btn__label { color: #C50F1F; }
 .rbn-btn--accent:not(:disabled):hover { background: #FDECEA; border-color: #F4A8A0; }
 
+/* Breakpoint count badge */
+.rbn-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  height: 44px;
+}
+.rbn-badge__icon { font-size: 10px; color: #C50F1F; }
+.rbn-badge__count { font-size: 13px; font-weight: 600; color: #444; }
+
 /* Project name chip */
 .ribbon__project {
   display: flex;

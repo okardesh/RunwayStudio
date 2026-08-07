@@ -40,6 +40,7 @@ export interface WorkflowNodeData {
   childIds?: string[];   // ordered child node IDs (for container activities)
   parentId?: string;     // set on child nodes so the canvas can exclude them from the top level
   isContainer?: boolean; // mirrors ActivityDefinition.isContainer for quick access
+  breakpoint?: boolean;  // pauses debug execution before this activity runs
 }
 
 export interface WorkflowVariable {

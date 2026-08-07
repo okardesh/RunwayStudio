@@ -5,7 +5,28 @@ export type LogLevel = 'Info' | 'Warning' | 'Error' | 'Debug';
 export type LogFn = (text: string, level: LogLevel) => void;
 
 let _stopRequested = false;
-export function requestStop() { _stopRequested = true; }
+
+// ── Debug stepping ──────────────────────────────────────────────────────────
+// Single module-level pause slot: at most one workflow runs at a time, so a
+// single pending resolver is enough to model "paused, waiting for the user".
+
+export type StepMode = 'continue' | 'step-into' | 'step-over';
+
+let _resumeResolver: ((mode: StepMode) => void) | null = null;
+
+export function isDebugPaused() { return _resumeResolver !== null; }
+
+export function resumeDebug(mode: StepMode) {
+  if (!_resumeResolver) return;
+  const resolve = _resumeResolver;
+  _resumeResolver = null;
+  resolve(mode);
+}
+
+export function requestStop() {
+  _stopRequested = true;
+  resumeDebug('continue'); // unblock a paused debug session so it can observe the stop
+}
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -47,12 +68,20 @@ async function runActivity(
   return browserFallback(activityId, properties, onLog);
 }
 
+export interface DebugOptions {
+  debug?: boolean;
+  hasBreakpoint?: (nodeId: string) => boolean;
+  onPause?: (nodeId: string) => void;
+  onResume?: () => void;
+}
+
 export async function executeWorkflow(
   nodes: Node<WorkflowNodeData>[],
   _edges: Edge[],
   onNodeStart: (id: string) => void,
   onNodeEnd:   (id: string) => void,
-  onLog: LogFn
+  onLog: LogFn,
+  debugOptions?: DebugOptions
 ): Promise<'completed' | 'stopped' | 'error'> {
   _stopRequested = false;
 
@@ -62,11 +91,38 @@ export async function executeWorkflow(
     return 'error';
   }
 
+  const debug = debugOptions?.debug ?? false;
+  const hasBreakpoint = debugOptions?.hasBreakpoint ?? (() => false);
+  // A fresh debug run only pauses at breakpoints until the user starts stepping.
+  let pendingStep: 'run' | StepMode = 'run';
+  let stepOverBaseDepth = 0;
+
+  // Pauses (awaiting a resume command) before a node runs, when debugging and either
+  // it carries a breakpoint or the previous step command asked to stop here.
+  async function maybeBreak(nodeId: string, depth: number) {
+    if (!debug) return;
+    const shouldPause =
+      hasBreakpoint(nodeId) ||
+      pendingStep === 'step-into' ||
+      (pendingStep === 'step-over' && depth <= stepOverBaseDepth);
+    if (!shouldPause) return;
+
+    debugOptions?.onPause?.(nodeId);
+    const mode = await new Promise<StepMode>((resolve) => { _resumeResolver = resolve; });
+    debugOptions?.onResume?.();
+
+    if (mode === 'continue') pendingStep = 'run';
+    else if (mode === 'step-into') pendingStep = 'step-into';
+    else { pendingStep = 'step-over'; stepOverBaseDepth = depth; }
+  }
+
   onLog('▶  Workflow started', 'Info');
 
   for (const node of topLevel) {
     if (_stopRequested) { onLog('Stopped by user', 'Warning'); return 'stopped'; }
     onNodeStart(node.id);
+    await maybeBreak(node.id, 0);
+    if (_stopRequested) { onNodeEnd(node.id); onLog('Stopped by user', 'Warning'); return 'stopped'; }
     onLog(`→ ${node.data.label}`, 'Info');
 
     if (node.data.isContainer) {
@@ -80,6 +136,8 @@ export async function executeWorkflow(
       for (const child of children) {
         if (_stopRequested) { onLog('Stopped by user', 'Warning'); onNodeEnd(node.id); return 'stopped'; }
         onNodeStart(child.id);
+        await maybeBreak(child.id, 1);
+        if (_stopRequested) { onNodeEnd(child.id); onNodeEnd(node.id); onLog('Stopped by user', 'Warning'); return 'stopped'; }
         onLog(`  → ${child.data.label}`, 'Info');
         const childOk = await runActivity(child.data.activityId, child.data.properties, onLog);
         onNodeEnd(child.id);

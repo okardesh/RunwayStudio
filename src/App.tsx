@@ -6,8 +6,6 @@ import { PropertiesPanel } from './components/PropertiesPanel/PropertiesPanel';
 import { StatusBar } from './components/StatusBar/StatusBar';
 import { BottomPanel } from './components/BottomPanel/BottomPanel';
 import { useWorkflowStore } from './store/workflowStore';
-import { useUiStore } from './store/uiStore';
-import { executeWorkflow, requestStop } from './engine/executor';
 import './App.css';
 
 type Tab = 'design' | 'debug';
@@ -15,29 +13,9 @@ type Tab = 'design' | 'debug';
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('design');
   const projectName = useWorkflowStore((s) => s.projectName);
-  const status = useWorkflowStore((s) => s.status);
-  const isRunning = status === 'running';
 
-  const handleTabChange = (tab: Tab) => {
-    setActiveTab(tab);
-    if (tab === 'debug' && !isRunning) {
-      const store = useWorkflowStore.getState();
-      store.setStatus('running');
-      executeWorkflow(
-        store.nodes,
-        store.edges,
-        (id) => useWorkflowStore.getState().setExecutingNodeId(id),
-        (_id) => {},
-        (text, level) => useUiStore.getState().addOutputMessage({ text, level })
-      ).then((result) => {
-        useWorkflowStore.getState().setExecutingNodeId(null);
-        useWorkflowStore.getState().setStatus(
-          result === 'completed' ? 'completed' : result === 'stopped' ? 'idle' : 'error'
-        );
-      });
-    }
-    if (tab === 'design' && isRunning) requestStop();
-  };
+  // Toolbar reacts to activeTab itself (starts/stops the debug run) — this just switches views.
+  const handleTabChange = (tab: Tab) => setActiveTab(tab);
 
   return (
     <div className="app">
@@ -65,7 +43,7 @@ function App() {
         </div>
       </header>
 
-      <Toolbar />
+      <Toolbar activeTab={activeTab} />
 
       <div className="app__body">
         <div className="app__workspace">

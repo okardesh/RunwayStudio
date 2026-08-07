@@ -22,7 +22,7 @@ function ContainerCard({
   onSelect: () => void;
   onDelete: () => void;
 }) {
-  const { nodes, addChildNodeAt, moveChildNode, deleteNode, selectedNodeId, setSelectedNode, executingNodeId } =
+  const { nodes, addChildNodeAt, moveChildNode, deleteNode, selectedNodeId, setSelectedNode, executingNodeId, status, toggleBreakpoint } =
     useWorkflowStore();
 
   const [childDropIdx, setChildDropIdx] = useState(-1);
@@ -31,6 +31,7 @@ function ContainerCard({
   const [indicating, setIndicating] = useState(false);
 
   const { updateNodeProperties } = useWorkflowStore();
+  const isPaused = status === 'paused';
 
   const childIds = node.data.childIds ?? [];
   const children = childIds.map((id) => nodes.find((n) => n.id === id)).filter(Boolean) as Node<WorkflowNodeData>[];
@@ -57,12 +58,18 @@ function ContainerCard({
 
   return (
     <div
-      className={`container-card${isSelected ? ' container-card--selected' : ''}${isExecuting ? ' container-card--executing' : ''}`}
+      className={`container-card${isSelected ? ' container-card--selected' : ''}${isExecuting ? ' container-card--executing' : ''}${isExecuting && isPaused ? ' container-card--paused' : ''}`}
       style={{ '--container-color': node.data.color } as React.CSSProperties}
       onClick={(e) => { e.stopPropagation(); onSelect(); }}
     >
       {/* Header */}
       <div className="container-card__hdr">
+        <button
+          className={`seq-card__bp${node.data.breakpoint ? ' seq-card__bp--set' : ''}`}
+          onClick={(e) => { e.stopPropagation(); toggleBreakpoint(node.id); }}
+          title={node.data.breakpoint ? 'Remove breakpoint' : 'Set breakpoint'}
+        >●</button>
+        {isExecuting && isPaused && <span className="seq-card__pause-arrow">▶</span>}
         <span className="container-card__hdr-icon">{node.data.icon}</span>
         <span className="container-card__hdr-name">{node.data.label}</span>
         <div className="container-card__hdr-actions">
@@ -141,10 +148,11 @@ function ContainerCard({
             const isDragging = childDraggingIdx === idx;
             const childIsExecuting = child.id === executingNodeId;
             const childIsSelected  = child.id === selectedNodeId;
+            const childIsPaused = childIsExecuting && isPaused;
             return (
               <div key={child.id} className="seq-item" style={{ opacity: isDragging ? 0.35 : 1 }}>
                 <div
-                  className={`seq-card${childIsSelected ? ' seq-card--selected' : ''}${childIsExecuting ? ' seq-card--executing' : ''}`}
+                  className={`seq-card${childIsSelected ? ' seq-card--selected' : ''}${childIsExecuting ? ' seq-card--executing' : ''}${childIsPaused ? ' seq-card--paused' : ''}`}
                   style={{ borderLeftColor: child.data.color ?? '#0078D4' }}
                   onClick={(e) => { e.stopPropagation(); setSelectedNode(child.id); }}
                   draggable
@@ -157,6 +165,12 @@ function ContainerCard({
                   }}
                   onDragEnd={() => setChildDraggingIdx(null)}
                 >
+                  <button
+                    className={`seq-card__bp${child.data.breakpoint ? ' seq-card__bp--set' : ''}`}
+                    onClick={(e) => { e.stopPropagation(); toggleBreakpoint(child.id); }}
+                    title={child.data.breakpoint ? 'Remove breakpoint' : 'Set breakpoint'}
+                  >●</button>
+                  {childIsPaused && <span className="seq-card__pause-arrow">▶</span>}
                   <div className="seq-card__icon" style={{ background: child.data.color ?? '#0078D4' }}>
                     {child.data.icon}
                   </div>
@@ -168,7 +182,7 @@ function ContainerCard({
                       return hint ? <span className="seq-card__hint">{String(hint)}</span> : null;
                     })()}
                   </div>
-                  {childIsExecuting && <div className="seq-card__spinner" />}
+                  {childIsExecuting && !isPaused && <div className="seq-card__spinner" />}
                   <button className="seq-card__delete" onClick={(e) => { e.stopPropagation(); deleteNode(child.id); }} title="Remove">×</button>
                 </div>
                 <InsertZone index={idx + 1} active={childDropIdx === idx + 1} visible={childDragActive}
@@ -185,8 +199,9 @@ function ContainerCard({
 // ── Sequence canvas ───────────────────────────────────────────────────────────
 
 export function SequenceCanvas() {
-  const { nodes, addNodeAtIndex, moveNode, deleteNode, selectedNodeId, setSelectedNode, executingNodeId } =
+  const { nodes, addNodeAtIndex, moveNode, deleteNode, selectedNodeId, setSelectedNode, executingNodeId, status, toggleBreakpoint } =
     useWorkflowStore();
+  const isPaused = status === 'paused';
 
   // Only top-level nodes are rendered here; children are rendered inside ContainerCard
   const topLevelNodes = nodes.filter((n) => !n.data.parentId);
@@ -324,10 +339,12 @@ export function SequenceCanvas() {
                   );
                 }
 
+                const nodeIsPaused = isExecuting && isPaused;
+
                 return (
                   <div key={node.id} className="seq-item" style={{ opacity: isDragging ? 0.35 : 1 }}>
                     <div
-                      className={`seq-card${isSelected ? ' seq-card--selected' : ''}${isExecuting ? ' seq-card--executing' : ''}`}
+                      className={`seq-card${isSelected ? ' seq-card--selected' : ''}${isExecuting ? ' seq-card--executing' : ''}${nodeIsPaused ? ' seq-card--paused' : ''}`}
                       style={{ borderLeftColor: node.data.color ?? '#0078D4' }}
                       onClick={() => setSelectedNode(node.id)}
                       draggable
@@ -336,6 +353,12 @@ export function SequenceCanvas() {
                       onDragEnd={() => { setDraggingIdx(null); }}
                     >
                       <div className="seq-card__drag" title="Drag to reorder">⠿</div>
+                      <button
+                        className={`seq-card__bp${node.data.breakpoint ? ' seq-card__bp--set' : ''}`}
+                        onClick={(e) => { e.stopPropagation(); toggleBreakpoint(node.id); }}
+                        title={node.data.breakpoint ? 'Remove breakpoint' : 'Set breakpoint'}
+                      >●</button>
+                      {nodeIsPaused && <span className="seq-card__pause-arrow">▶</span>}
                       <div className="seq-card__icon" style={{ background: node.data.color ?? '#0078D4' }}>
                         {node.data.icon}
                       </div>
@@ -348,7 +371,7 @@ export function SequenceCanvas() {
                           return hint ? <span className="seq-card__hint">{String(hint)}</span> : null;
                         })()}
                       </div>
-                      {isExecuting && <div className="seq-card__spinner" />}
+                      {isExecuting && !isPaused && <div className="seq-card__spinner" />}
                       <button
                         className="seq-card__delete"
                         onClick={(e) => { e.stopPropagation(); deleteNode(node.id); }}

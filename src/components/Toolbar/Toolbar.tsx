@@ -1,23 +1,25 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWorkflowStore } from '../../store/workflowStore';
 import { useUiStore } from '../../store/uiStore';
-import { executeWorkflow, requestStop } from '../../engine/executor';
+import { executeWorkflow, requestStop, resumeDebug } from '../../engine/executor';
 import './Toolbar.css';
 
-export function Toolbar() {
-  const { projectName, status, setProjectName, clearWorkflow } = useWorkflowStore();
+interface ToolbarProps {
+  activeTab: 'design' | 'debug';
+}
+
+export function Toolbar({ activeTab }: ToolbarProps) {
+  const { projectName, status, setProjectName, clearWorkflow, nodes } = useWorkflowStore();
   const { toggleOutputPanel, showOutputPanel, toggleRecorder } = useUiStore();
   const [editingName, setEditingName] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [debugMode, setDebugMode] = useState(false);
 
-  const handleNameBlur = (e: React.FocusEvent<HTMLInputElement>) => {
-    setProjectName(e.target.value.trim() || 'New Workflow');
-    setEditingName(false);
-  };
+  const isRunning = status === 'running';
+  const isPaused = status === 'paused';
+  const breakpointCount = nodes.filter((n) => n.data.breakpoint).length;
 
-  const handleRun = useCallback(async () => {
+  const startRun = useCallback(async (debug: boolean) => {
     const store = useWorkflowStore.getState();
     if (!useUiStore.getState().showOutputPanel) useUiStore.getState().toggleOutputPanel();
     store.setStatus('running');
@@ -26,7 +28,17 @@ export function Toolbar() {
       store.edges,
       (id) => useWorkflowStore.getState().setExecutingNodeId(id),
       (_id) => {},
-      (text, level) => useUiStore.getState().addOutputMessage({ text, level })
+      (text, level) => useUiStore.getState().addOutputMessage({ text, level }),
+      debug ? {
+        debug: true,
+        hasBreakpoint: (id) => !!useWorkflowStore.getState().nodes.find((n) => n.id === id)?.data.breakpoint,
+        onPause: (id) => {
+          useWorkflowStore.getState().setStatus('paused');
+          const label = useWorkflowStore.getState().nodes.find((n) => n.id === id)?.data.label ?? id;
+          useUiStore.getState().addOutputMessage({ text: `⏸  Paused at "${label}"`, level: 'Debug' });
+        },
+        onResume: () => useWorkflowStore.getState().setStatus('running'),
+      } : undefined
     );
     useWorkflowStore.getState().setExecutingNodeId(null);
     useWorkflowStore.getState().setStatus(
@@ -34,7 +46,28 @@ export function Toolbar() {
     );
   }, []);
 
+  // Entering the Debug tab starts a debug run (pauses only at breakpoints);
+  // leaving it stops whatever's in flight.
+  const prevTab = useRef(activeTab);
+  useEffect(() => {
+    if (prevTab.current !== activeTab) {
+      if (activeTab === 'debug') startRun(true);
+      else requestStop();
+    }
+    prevTab.current = activeTab;
+  }, [activeTab, startRun]);
+
+  const handleNameBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    setProjectName(e.target.value.trim() || 'New Workflow');
+    setEditingName(false);
+  };
+
+  const handleRun = useCallback(() => startRun(false), [startRun]);
   const handleStop = useCallback(() => requestStop(), []);
+  const handleContinue = useCallback(() => resumeDebug('continue'), []);
+  const handleStepInto = useCallback(() => resumeDebug('step-into'), []);
+  const handleStepOver = useCallback(() => resumeDebug('step-over'), []);
+  const handleRestart = useCallback(() => { requestStop(); setTimeout(() => startRun(true), 60); }, [startRun]);
 
   const handleSave = useCallback(() => {
     const { nodes, edges, variables, projectName: name } = useWorkflowStore.getState();
@@ -63,8 +96,6 @@ export function Toolbar() {
     e.target.value = '';
   }, []);
 
-  const isRunning = status === 'running';
-
   return (
     <div className="ribbon">
       <input ref={fileInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleFileChange} />
@@ -89,38 +120,99 @@ export function Toolbar() {
 
       <div className="ribbon__sep" />
 
-      <div className="ribbon__group">
-        <div className="ribbon__btns">
-          <button
-            className={`rbn-btn rbn-btn--run${isRunning ? ' active' : ''}`}
-            onClick={handleRun}
-            disabled={isRunning}
-            title="Run (F5)"
-          >
-            <span className="rbn-btn__icon rbn-btn__icon--lg">▶</span>
-            <span className="rbn-btn__label">Run</span>
-          </button>
-          <button
-            className="rbn-btn rbn-btn--stop"
-            onClick={handleStop}
-            disabled={!isRunning}
-            title="Stop (Shift+F5)"
-          >
-            <span className="rbn-btn__icon rbn-btn__icon--lg">⏹</span>
-            <span className="rbn-btn__label">Stop</span>
-          </button>
-          <button
-            className={`rbn-btn rbn-btn--debug${debugMode ? ' active' : ''}`}
-            onClick={() => setDebugMode(!debugMode)}
-            disabled={isRunning}
-            title="Debug"
-          >
-            <span className="rbn-btn__icon rbn-btn__icon--lg">🐞</span>
-            <span className="rbn-btn__label">Debug</span>
-          </button>
+      {activeTab === 'design' ? (
+        <div className="ribbon__group">
+          <div className="ribbon__btns">
+            <button
+              className={`rbn-btn rbn-btn--run${isRunning ? ' active' : ''}`}
+              onClick={handleRun}
+              disabled={isRunning}
+              title="Run (F5)"
+            >
+              <span className="rbn-btn__icon rbn-btn__icon--lg">▶</span>
+              <span className="rbn-btn__label">Run</span>
+            </button>
+            <button
+              className="rbn-btn rbn-btn--stop"
+              onClick={handleStop}
+              disabled={!isRunning}
+              title="Stop (Shift+F5)"
+            >
+              <span className="rbn-btn__icon rbn-btn__icon--lg">⏹</span>
+              <span className="rbn-btn__label">Stop</span>
+            </button>
+          </div>
+          <span className="ribbon__group-label">Execute</span>
         </div>
-        <span className="ribbon__group-label">Execute</span>
-      </div>
+      ) : (
+        <>
+          <div className="ribbon__group">
+            <div className="ribbon__btns">
+              <button
+                className={`rbn-btn rbn-btn--run${isRunning ? ' active' : ''}`}
+                onClick={handleContinue}
+                disabled={!isPaused}
+                title="Continue (F5)"
+              >
+                <span className="rbn-btn__icon rbn-btn__icon--lg">▶</span>
+                <span className="rbn-btn__label">Continue</span>
+              </button>
+              <button
+                className="rbn-btn rbn-btn--stop"
+                onClick={handleStop}
+                disabled={!isRunning && !isPaused}
+                title="Stop (Shift+F5)"
+              >
+                <span className="rbn-btn__icon rbn-btn__icon--lg">⏹</span>
+                <span className="rbn-btn__label">Stop</span>
+              </button>
+              <button className="rbn-btn" onClick={handleRestart} title="Restart debug run">
+                <span className="rbn-btn__icon rbn-btn__icon--lg">↻</span>
+                <span className="rbn-btn__label">Restart</span>
+              </button>
+            </div>
+            <span className="ribbon__group-label">Execute</span>
+          </div>
+
+          <div className="ribbon__sep" />
+
+          <div className="ribbon__group">
+            <div className="ribbon__btns">
+              <button
+                className="rbn-btn rbn-btn--debug"
+                onClick={handleStepInto}
+                disabled={!isPaused}
+                title="Step Into (F11) — descend into the next container's first activity"
+              >
+                <span className="rbn-btn__icon rbn-btn__icon--lg">⬇</span>
+                <span className="rbn-btn__label">Step Into</span>
+              </button>
+              <button
+                className="rbn-btn rbn-btn--debug"
+                onClick={handleStepOver}
+                disabled={!isPaused}
+                title="Step Over (F10) — run the next activity (or whole container) as one step"
+              >
+                <span className="rbn-btn__icon rbn-btn__icon--lg">➡</span>
+                <span className="rbn-btn__label">Step Over</span>
+              </button>
+            </div>
+            <span className="ribbon__group-label">Step</span>
+          </div>
+
+          <div className="ribbon__sep" />
+
+          <div className="ribbon__group">
+            <div className="ribbon__btns">
+              <div className="rbn-badge" title={`${breakpointCount} breakpoint${breakpointCount === 1 ? '' : 's'} set — click an activity's left edge to toggle one`}>
+                <span className="rbn-badge__icon">⬤</span>
+                <span className="rbn-badge__count">{breakpointCount}</span>
+              </div>
+            </div>
+            <span className="ribbon__group-label">Breakpoints</span>
+          </div>
+        </>
+      )}
 
       <div className="ribbon__sep" />
 
