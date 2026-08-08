@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useWorkflowStore } from '../../store/workflowStore';
 import { useUiStore } from '../../store/uiStore';
 import { executeWorkflow, requestStop, resumeDebug } from '../../engine/executor';
@@ -50,23 +50,13 @@ export function Toolbar({ activeTab }: ToolbarProps) {
     );
   }, []);
 
-  // Entering the Debug tab starts a debug run (pauses only at breakpoints);
-  // leaving it stops whatever's in flight.
-  const prevTab = useRef(activeTab);
-  useEffect(() => {
-    if (prevTab.current !== activeTab) {
-      if (activeTab === 'debug') startRun(true);
-      else requestStop();
-    }
-    prevTab.current = activeTab;
-  }, [activeTab, startRun]);
-
   const handleNameBlur = (e: React.FocusEvent<HTMLInputElement>) => {
     setProjectName(e.target.value.trim() || 'New Workflow');
     setEditingName(false);
   };
 
   const handleRun = useCallback(() => startRun(false), [startRun]);
+  const handleDebug = useCallback(() => startRun(true), [startRun]);
   const handleStop = useCallback(() => requestStop(), []);
   const handleContinue = useCallback(() => resumeDebug('continue'), []);
   const handleStepInto = useCallback(() => resumeDebug('step-into'), []);
@@ -153,12 +143,12 @@ export function Toolbar({ activeTab }: ToolbarProps) {
             <div className="ribbon__btns">
               <button
                 className={`rbn-btn rbn-btn--run${isRunning ? ' active' : ''}`}
-                onClick={handleContinue}
-                disabled={!isPaused}
-                title="Continue (F5)"
+                onClick={isPaused ? handleContinue : handleDebug}
+                disabled={isRunning && !isPaused}
+                title={isPaused ? 'Continue (F5)' : 'Debug workflow'}
               >
                 <span className="rbn-btn__icon rbn-btn__icon--lg">▶</span>
-                <span className="rbn-btn__label">Continue</span>
+                <span className="rbn-btn__label">{isPaused ? 'Continue' : 'Debug'}</span>
               </button>
               <button
                 className="rbn-btn rbn-btn--stop"
