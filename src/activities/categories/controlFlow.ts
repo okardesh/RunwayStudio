@@ -87,6 +87,7 @@ export const controlFlowActivities: ActivityDefinition[] = [
     description: 'Catches and handles runtime exceptions',
     color: '#B71C1C',
     nodeType: 'sequence',
+    isContainer: true,
     properties: [
       {
         name: 'exception',

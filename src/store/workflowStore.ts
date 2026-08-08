@@ -36,14 +36,19 @@ interface WorkflowState {
   addNodeAtIndex: (activityId: string, index: number) => void;
   addChildNodeAt: (parentId: string, activityId: string, index: number) => void;
   addIfBranch: (parentId: string) => void;
-  updateIfBranch: (parentId: string, branchId: string, changes: Partial<Pick<WorkflowBranch, 'condition'>>) => void;
+  addTryCatchBranch: (parentId: string) => void;
+  removeTryCatchBranch: (parentId: string, branchId: string) => void;
+  updateIfBranch: (parentId: string, branchId: string, changes: Partial<Pick<WorkflowBranch, 'condition' | 'exceptionType'>>) => void;
   addIfBranchChildAt: (parentId: string, branchId: string, activityId: string, index: number) => void;
+  addTryCatchBranchChildAt: (parentId: string, branchId: string, activityId: string, index: number) => void;
   moveIfBranchChild: (parentId: string, sourceBranchId: string, targetBranchId: string, childId: string, index: number) => void;
   moveNode: (from: number, to: number) => void;
   moveChildNode: (parentId: string, from: number, to: number) => void;
   deleteNode: (nodeId: string) => void;
   updateNodeProperties: (nodeId: string, properties: Record<string, unknown>) => void;
   toggleBreakpoint: (nodeId: string) => void;
+  toggleNodeCollapsed: (nodeId: string) => void;
+  setAllNodesCollapsed: (collapsed: boolean) => void;
   setSelectedNode: (nodeId: string | null) => void;
   addVariable: (variable: Omit<WorkflowVariable, 'id'>) => void;
   removeVariable: (variableId: string) => void;
@@ -127,6 +132,10 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
         branches: activityId === 'if' ? [
           { id: uuidv4(), kind: 'if', condition: '', childIds: [] },
           { id: uuidv4(), kind: 'else', condition: '', childIds: [] },
+        ] : activityId === 'try-catch' ? [
+          { id: uuidv4(), kind: 'try', condition: '', childIds: [] },
+          { id: uuidv4(), kind: 'catch', condition: '', exceptionType: 'System.Exception', childIds: [] },
+          { id: uuidv4(), kind: 'finally', condition: '', childIds: [] },
         ] : undefined,
       },
     };
@@ -154,6 +163,10 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
         branches: activityId === 'if' ? [
           { id: uuidv4(), kind: 'if', condition: '', childIds: [] },
           { id: uuidv4(), kind: 'else', condition: '', childIds: [] },
+        ] : activityId === 'try-catch' ? [
+          { id: uuidv4(), kind: 'try', condition: '', childIds: [] },
+          { id: uuidv4(), kind: 'catch', condition: '', exceptionType: 'System.Exception', childIds: [] },
+          { id: uuidv4(), kind: 'finally', condition: '', childIds: [] },
         ] : undefined,
       },
     };
@@ -217,6 +230,41 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
       };
     }),
 
+  addTryCatchBranch: (parentId) =>
+    set((state) => {
+      const parent = state.nodes.find((node) => node.id === parentId);
+      if (!parent || parent.data.activityId !== 'try-catch') return state;
+      const branches = [...(parent.data.branches ?? [])];
+      const finallyIndex = branches.findIndex((branch) => branch.kind === 'finally');
+      branches.splice(finallyIndex === -1 ? branches.length : finallyIndex, 0, {
+        id: uuidv4(), kind: 'catch', condition: '', exceptionType: 'System.Exception', childIds: [],
+      });
+      return {
+        nodes: state.nodes.map((node) => node.id === parentId
+          ? { ...node, data: { ...node.data, branches } }
+          : node),
+        isDirty: true,
+      };
+    }),
+
+  removeTryCatchBranch: (parentId, branchId) =>
+    set((state) => {
+      const parent = state.nodes.find((node) => node.id === parentId);
+      const branch = parent?.data.branches?.find((item) => item.id === branchId);
+      const catchCount = parent?.data.branches?.filter((item) => item.kind === 'catch').length ?? 0;
+      if (!parent || !branch || branch.kind !== 'catch' || catchCount <= 1) return state;
+      const removedChildIds = new Set(branch.childIds);
+      return {
+        nodes: state.nodes
+          .filter((node) => !removedChildIds.has(node.id))
+          .map((node) => node.id === parentId
+            ? { ...node, data: { ...node.data, branches: (node.data.branches ?? []).filter((item) => item.id !== branchId) } }
+            : node),
+        selectedNodeId: state.selectedNodeId && removedChildIds.has(state.selectedNodeId) ? null : state.selectedNodeId,
+        isDirty: true,
+      };
+    }),
+
   updateIfBranch: (parentId, branchId, changes) =>
     set((state) => ({
       nodes: state.nodes.map((node) => node.id === parentId
@@ -228,6 +276,33 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
     })),
 
   addIfBranchChildAt: (parentId, branchId, activityId, index) => {
+    const activity = getActivity(activityId);
+    if (!activity) return;
+    const properties: Record<string, unknown> = {};
+    activity.properties.forEach((property) => { properties[property.name] = property.defaultValue ?? ''; });
+    const childNode: Node<WorkflowNodeData> = {
+      id: uuidv4(), type: 'activityNode', position: { x: 0, y: 0 },
+      data: { activityId, label: activity.name, icon: activity.icon, color: activity.color, properties, parentId, branchId },
+    };
+    set((state) => ({
+      nodes: [
+        ...state.nodes.map((node) => node.id === parentId ? {
+          ...node,
+          data: {
+            ...node.data,
+            branches: (node.data.branches ?? []).map((branch) => branch.id === branchId ? {
+              ...branch, childIds: [...branch.childIds.slice(0, index), childNode.id, ...branch.childIds.slice(index)],
+            } : branch),
+          },
+        } : node),
+        childNode,
+      ],
+      selectedNodeId: childNode.id,
+      isDirty: true,
+    }));
+  },
+
+  addTryCatchBranchChildAt: (parentId, branchId, activityId, index) => {
     const activity = getActivity(activityId);
     if (!activity) return;
     const properties: Record<string, unknown> = {};
@@ -355,6 +430,20 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
       nodes: state.nodes.map((n) =>
         n.id === nodeId ? { ...n, data: { ...n.data, breakpoint: !n.data.breakpoint } } : n
       ),
+      isDirty: true,
+    })),
+
+  toggleNodeCollapsed: (nodeId) =>
+    set((state) => ({
+      nodes: state.nodes.map((node) =>
+        node.id === nodeId ? { ...node, data: { ...node.data, collapsed: !node.data.collapsed } } : node
+      ),
+      isDirty: true,
+    })),
+
+  setAllNodesCollapsed: (collapsed) =>
+    set((state) => ({
+      nodes: state.nodes.map((node) => ({ ...node, data: { ...node.data, collapsed } })),
       isDirty: true,
     })),
 

@@ -23,7 +23,7 @@ function ContainerCard({
   onSelect: () => void;
   onDelete: () => void;
 }) {
-  const { nodes, addChildNodeAt, moveChildNode, deleteNode, selectedNodeId, setSelectedNode, executingNodeId, status, toggleBreakpoint } =
+  const { nodes, addChildNodeAt, moveChildNode, deleteNode, selectedNodeId, setSelectedNode, executingNodeId, status, toggleBreakpoint, toggleNodeCollapsed } =
     useWorkflowStore();
 
   const [childDropIdx, setChildDropIdx] = useState(-1);
@@ -56,6 +56,7 @@ function ContainerCard({
 
   const url    = String(node.data.properties['url'] ?? '');
   const hasTarget = url.length > 0;
+  const isCollapsed = !!node.data.collapsed;
 
   return (
     <div
@@ -75,12 +76,12 @@ function ContainerCard({
         <span className="container-card__hdr-name">{node.data.label}</span>
         <div className="container-card__hdr-actions">
           {!hasTarget && <span className="container-card__warn" title="No target set">⚠</span>}
+          <button className="seq-card__collapse" onClick={(e) => { e.stopPropagation(); toggleNodeCollapsed(node.id); }} title={isCollapsed ? 'Expand block' : 'Collapse block'}>{isCollapsed ? '▸' : '▾'}</button>
           <button className="container-card__del" onClick={(e) => { e.stopPropagation(); onDelete(); }} title="Remove">×</button>
         </div>
       </div>
 
-      {/* Indicate area */}
-      <div className="container-card__indicate">
+      {!isCollapsed && <><div className="container-card__indicate">
         {hasTarget ? (
           <span
             className="container-card__target-url"
@@ -119,7 +120,6 @@ function ContainerCard({
         document.body
       )}
 
-      {/* Do section */}
       <div
         className="container-card__do"
         onDragEnter={(e) => { e.preventDefault(); setChildDragActive(true); }}
@@ -150,10 +150,11 @@ function ContainerCard({
             const childIsExecuting = child.id === executingNodeId;
             const childIsSelected  = child.id === selectedNodeId;
             const childIsPaused = childIsExecuting && isPaused;
+            const childIsCollapsed = !!child.data.collapsed;
             return (
               <div key={child.id} className="seq-item" style={{ opacity: isDragging ? 0.35 : 1 }}>
                 <div
-                  className={`seq-card${childIsSelected ? ' seq-card--selected' : ''}${childIsExecuting ? ' seq-card--executing' : ''}${childIsPaused ? ' seq-card--paused' : ''}`}
+                  className={`seq-card${childIsSelected ? ' seq-card--selected' : ''}${childIsExecuting ? ' seq-card--executing' : ''}${childIsPaused ? ' seq-card--paused' : ''}${childIsCollapsed ? ' seq-card--collapsed' : ''}`}
                   style={{ borderLeftColor: child.data.color ?? '#0078D4' }}
                   onClick={(e) => { e.stopPropagation(); setSelectedNode(child.id); }}
                   draggable
@@ -177,13 +178,14 @@ function ContainerCard({
                   </div>
                   <div className="seq-card__body">
                     <span className="seq-card__name">{child.data.label}</span>
-                    {(() => {
+                    {!childIsCollapsed && (() => {
                       const act = getActivity(child.data.activityId);
                       const hint = act?.properties.map((p) => child.data.properties[p.name]).find((v) => v && String(v).trim());
                       return hint ? <span className="seq-card__hint">{String(hint)}</span> : null;
                     })()}
                   </div>
                   {childIsExecuting && !isPaused && <div className="seq-card__spinner" />}
+                    <button className="seq-card__collapse" onClick={(e) => { e.stopPropagation(); toggleNodeCollapsed(child.id); }} title={childIsCollapsed ? 'Expand activity' : 'Collapse activity'}>{childIsCollapsed ? '▸' : '▾'}</button>
                   <button className="seq-card__delete" onClick={(e) => { e.stopPropagation(); deleteNode(child.id); }} title="Remove">×</button>
                 </div>
                 <InsertZone index={idx + 1} active={childDropIdx === idx + 1} visible={childDragActive}
@@ -192,7 +194,7 @@ function ContainerCard({
             );
           })}
         </div>
-      </div>
+      </div></>}
     </div>
   );
 }
@@ -204,18 +206,20 @@ function IfCard({ node, isSelected, isExecuting, onSelect, onDelete }: {
   onSelect: () => void;
   onDelete: () => void;
 }) {
-  const { nodes, variables, addIfBranch, addIfBranchChildAt, moveIfBranchChild, deleteNode, selectedNodeId, setSelectedNode, updateIfBranch } = useWorkflowStore();
+  const { nodes, variables, addIfBranch, addIfBranchChildAt, moveIfBranchChild, deleteNode, selectedNodeId, setSelectedNode, updateIfBranch, toggleNodeCollapsed } = useWorkflowStore();
   const branches = node.data.branches ?? [];
   const hasConditionalElse = branches.some((branch) => branch.kind === 'elseIf');
+  const isCollapsed = !!node.data.collapsed;
 
   return (
     <div className={`if-card${isSelected ? ' if-card--selected' : ''}${isExecuting ? ' if-card--executing' : ''}`} onClick={(event) => { event.stopPropagation(); onSelect(); }}>
       <div className="if-card__hdr">
         <span className="if-card__icon">{node.data.icon}</span>
         <span className="if-card__title">{node.data.label}</span>
+        <button className="seq-card__collapse" onClick={(event) => { event.stopPropagation(); toggleNodeCollapsed(node.id); }} title={isCollapsed ? 'Expand block' : 'Collapse block'}>{isCollapsed ? '▸' : '▾'}</button>
         <button className="if-card__delete" onClick={(event) => { event.stopPropagation(); onDelete(); }} title="Remove If">×</button>
       </div>
-      <div className="if-card__branches">
+      {!isCollapsed && <><div className="if-card__branches">
         {branches.map((branch) => {
           const children = branch.childIds.map((id) => nodes.find((item) => item.id === id)).filter(Boolean) as Node<WorkflowNodeData>[];
           const branchLabel = branch.kind === 'if' ? 'IF' : branch.kind === 'elseIf' ? 'ELSE IF' : 'ELSE';
@@ -250,23 +254,115 @@ function IfCard({ node, isSelected, isExecuting, onSelect, onDelete }: {
               </div>
               {isInvalid && <div className="if-branch__validation">Condition required when using multiple ELSE branches.</div>}
               <div className="if-branch__body">
-                {children.length === 0 ? <div className="if-branch__empty">Drop activity here</div> : children.map((child) => (
-                  <div key={child.id} className={`seq-card if-branch__activity${selectedNodeId === child.id ? ' seq-card--selected' : ''}`} style={{ borderLeftColor: child.data.color ?? '#0078D4' }} onClick={(event) => { event.stopPropagation(); setSelectedNode(child.id); }} draggable onDragStart={(event) => {
+                {children.length === 0 ? <div className="if-branch__empty">Drop activity here</div> : children.map((child) => {
+                  const childIsCollapsed = !!child.data.collapsed;
+                  return <div key={child.id} className={`seq-card if-branch__activity${selectedNodeId === child.id ? ' seq-card--selected' : ''}${childIsCollapsed ? ' seq-card--collapsed' : ''}`} style={{ borderLeftColor: child.data.color ?? '#0078D4' }} onClick={(event) => { event.stopPropagation(); setSelectedNode(child.id); }} draggable onDragStart={(event) => {
                     event.dataTransfer.setData('application/rpa-if-child-id', child.id);
                     event.dataTransfer.setData('application/rpa-if-branch-id', branch.id);
                     event.dataTransfer.effectAllowed = 'move';
                   }}>
                     <div className="seq-card__icon" style={{ background: child.data.color ?? '#0078D4' }}>{child.data.icon}</div>
                     <div className="seq-card__body"><span className="seq-card__name">{child.data.label}</span></div>
+                    <button className="seq-card__collapse" onClick={(event) => { event.stopPropagation(); toggleNodeCollapsed(child.id); }} title={childIsCollapsed ? 'Expand activity' : 'Collapse activity'}>{childIsCollapsed ? '▸' : '▾'}</button>
                     <button className="seq-card__delete" onClick={(event) => { event.stopPropagation(); deleteNode(child.id); }} title="Remove">×</button>
-                  </div>
-                ))}
+                  </div>;
+                })}
               </div>
             </section>
           );
         })}
       </div>
-      <button className="if-card__add-else" onClick={(event) => { event.stopPropagation(); addIfBranch(node.id); }}>+ Add Else</button>
+      <button className="if-card__add-else" onClick={(event) => { event.stopPropagation(); addIfBranch(node.id); }}>+ Add Else</button></>}
+    </div>
+  );
+}
+
+function TryCatchCard({ node, isSelected, isExecuting, onSelect, onDelete }: {
+  node: Node<WorkflowNodeData>;
+  isSelected: boolean;
+  isExecuting: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+}) {
+  const { nodes, addTryCatchBranch, removeTryCatchBranch, addTryCatchBranchChildAt, moveIfBranchChild, deleteNode, selectedNodeId, setSelectedNode, toggleNodeCollapsed, updateIfBranch } = useWorkflowStore();
+  const branches = node.data.branches ?? [];
+  const isCollapsed = !!node.data.collapsed;
+  const catchCount = branches.filter((branch) => branch.kind === 'catch').length;
+
+  return (
+    <div className={`try-catch-card${isSelected ? ' try-catch-card--selected' : ''}${isExecuting ? ' try-catch-card--executing' : ''}`} onClick={(event) => { event.stopPropagation(); onSelect(); }}>
+      <div className="try-catch-card__hdr">
+        <span className="try-catch-card__icon">{node.data.icon}</span>
+        <span className="try-catch-card__title">{node.data.label}</span>
+        <button className="seq-card__collapse" onClick={(event) => { event.stopPropagation(); toggleNodeCollapsed(node.id); }} title={isCollapsed ? 'Expand block' : 'Collapse block'}>{isCollapsed ? '▸' : '▾'}</button>
+        <button className="try-catch-card__delete" onClick={(event) => { event.stopPropagation(); onDelete(); }} title="Remove Try Catch">×</button>
+      </div>
+      {!isCollapsed && <>
+        <div className="try-catch-card__branches">
+          {branches.map((branch, index) => {
+            const children = branch.childIds.map((id) => nodes.find((item) => item.id === id)).filter(Boolean) as Node<WorkflowNodeData>[];
+            const catchNumber = branches.slice(0, index + 1).filter((item) => item.kind === 'catch').length;
+            const branchLabel = branch.kind === 'try' ? 'TRY' : branch.kind === 'catch' ? `CATCH ${catchNumber}` : 'FINALLY';
+            return (
+              <section
+                key={branch.id}
+                className={`try-catch-branch try-catch-branch--${branch.kind}`}
+                onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  const activityId = event.dataTransfer.getData('application/rpa-activity');
+                  const childId = event.dataTransfer.getData('application/rpa-if-child-id');
+                  const sourceBranchId = event.dataTransfer.getData('application/rpa-if-branch-id');
+                  if (activityId) addTryCatchBranchChildAt(node.id, branch.id, activityId, children.length);
+                  else if (childId && sourceBranchId) moveIfBranchChild(node.id, sourceBranchId, branch.id, childId, children.length);
+                }}
+              >
+                <div className="try-catch-branch__hdr">
+                  <span>{branchLabel}</span>
+                  {branch.kind === 'catch' && <select
+                    className="try-catch-branch__exception"
+                    value={branch.exceptionType ?? 'System.Exception'}
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={(event) => updateIfBranch(node.id, branch.id, { exceptionType: event.target.value })}
+                    aria-label="Exception type"
+                  >
+                    <option value="System.Exception">System.Exception</option>
+                    <option value="System.ArgumentException">System.ArgumentException</option>
+                    <option value="System.ArgumentNullException">System.ArgumentNullException</option>
+                    <option value="System.InvalidOperationException">System.InvalidOperationException</option>
+                    <option value="System.TimeoutException">System.TimeoutException</option>
+                    <option value="System.IO.IOException">System.IO.IOException</option>
+                    <option value="System.Net.Http.HttpRequestException">System.Net.Http.HttpRequestException</option>
+                    <option value="System.UnauthorizedAccessException">System.UnauthorizedAccessException</option>
+                  </select>}
+                  {branch.kind === 'catch' && <button
+                    className="try-catch-branch__remove"
+                    onClick={(event) => { event.stopPropagation(); removeTryCatchBranch(node.id, branch.id); }}
+                    disabled={catchCount <= 1}
+                    title={catchCount <= 1 ? 'A Try Catch block must have at least one Catch' : `Remove ${branchLabel}`}
+                    aria-label={`Remove ${branchLabel}`}
+                  >×</button>}
+                </div>
+                <div className="try-catch-branch__body">
+                  {children.length === 0 ? <div className="try-catch-branch__empty">{branch.kind === 'finally' ? 'Optional - drop activity here' : 'Drop activity here'}</div> : children.map((child) => (
+                    <div key={child.id} className={`seq-card if-branch__activity${selectedNodeId === child.id ? ' seq-card--selected' : ''}`} style={{ borderLeftColor: child.data.color ?? '#0078D4' }} onClick={(event) => { event.stopPropagation(); setSelectedNode(child.id); }} draggable onDragStart={(event) => {
+                      event.dataTransfer.setData('application/rpa-if-child-id', child.id);
+                      event.dataTransfer.setData('application/rpa-if-branch-id', branch.id);
+                      event.dataTransfer.effectAllowed = 'move';
+                    }}>
+                      <div className="seq-card__icon" style={{ background: child.data.color ?? '#0078D4' }}>{child.data.icon}</div>
+                      <div className="seq-card__body"><span className="seq-card__name">{child.data.label}</span></div>
+                      <button className="seq-card__delete" onClick={(event) => { event.stopPropagation(); deleteNode(child.id); }} title="Remove">×</button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+        <button className="try-catch-card__add-catch" onClick={(event) => { event.stopPropagation(); addTryCatchBranch(node.id); }}>+ Add Catch</button>
+      </>}
     </div>
   );
 }
@@ -274,7 +370,7 @@ function IfCard({ node, isSelected, isExecuting, onSelect, onDelete }: {
 // ── Sequence canvas ───────────────────────────────────────────────────────────
 
 export function SequenceCanvas() {
-  const { nodes, addNodeAtIndex, moveNode, deleteNode, selectedNodeId, setSelectedNode, executingNodeId, status, toggleBreakpoint } =
+  const { nodes, addNodeAtIndex, moveNode, deleteNode, selectedNodeId, setSelectedNode, executingNodeId, status, toggleBreakpoint, toggleNodeCollapsed, setAllNodesCollapsed } =
     useWorkflowStore();
   const isPaused = status === 'paused';
 
@@ -358,8 +454,8 @@ export function SequenceCanvas() {
           </div>
         </div>
         <div className="seq-canvas__header-actions">
-          <button className="seq-canvas__act-btn">Expand All</button>
-          <button className="seq-canvas__act-btn">Collapse All</button>
+          <button className="seq-canvas__act-btn" onClick={() => setAllNodesCollapsed(false)}>Expand All</button>
+          <button className="seq-canvas__act-btn" onClick={() => setAllNodesCollapsed(true)}>Collapse All</button>
         </div>
       </div>
 
@@ -392,11 +488,21 @@ export function SequenceCanvas() {
                 const isExecuting = node.id === executingNodeId;
                 const isSelected = node.id === selectedNodeId;
                 const isDragging = draggingIdx === idx;
+                const isCollapsed = !!node.data.collapsed;
 
                 if (node.data.activityId === 'if') {
                   return (
                     <div key={node.id} className="seq-item" style={{ opacity: isDragging ? 0.35 : 1 }}>
                       <IfCard node={node} isSelected={isSelected} isExecuting={isExecuting} onSelect={() => setSelectedNode(node.id)} onDelete={() => deleteNode(node.id)} />
+                      <InsertZone index={idx + 1} active={dropIndex === idx + 1} visible={canvasDragActive} onDragOver={() => setDropIndex(idx + 1)} onDrop={handleZoneDrop} />
+                    </div>
+                  );
+                }
+
+                if (node.data.activityId === 'try-catch') {
+                  return (
+                    <div key={node.id} className="seq-item" style={{ opacity: isDragging ? 0.35 : 1 }}>
+                      <TryCatchCard node={node} isSelected={isSelected} isExecuting={isExecuting} onSelect={() => setSelectedNode(node.id)} onDelete={() => deleteNode(node.id)} />
                       <InsertZone index={idx + 1} active={dropIndex === idx + 1} visible={canvasDragActive} onDragOver={() => setDropIndex(idx + 1)} onDrop={handleZoneDrop} />
                     </div>
                   );
@@ -428,7 +534,7 @@ export function SequenceCanvas() {
                 return (
                   <div key={node.id} className="seq-item" style={{ opacity: isDragging ? 0.35 : 1 }}>
                     <div
-                      className={`seq-card${isSelected ? ' seq-card--selected' : ''}${isExecuting ? ' seq-card--executing' : ''}${nodeIsPaused ? ' seq-card--paused' : ''}`}
+                      className={`seq-card${isSelected ? ' seq-card--selected' : ''}${isExecuting ? ' seq-card--executing' : ''}${nodeIsPaused ? ' seq-card--paused' : ''}${isCollapsed ? ' seq-card--collapsed' : ''}`}
                       style={{ borderLeftColor: node.data.color ?? '#0078D4' }}
                       onClick={() => setSelectedNode(node.id)}
                       draggable
@@ -448,7 +554,7 @@ export function SequenceCanvas() {
                       </div>
                       <div className="seq-card__body">
                         <span className="seq-card__name">{node.data.label}</span>
-                        {(() => {
+                        {!isCollapsed && (() => {
                           const hint = activity?.properties
                             .map((p) => node.data.properties[p.name])
                             .find((v) => v && String(v).trim());
@@ -456,6 +562,11 @@ export function SequenceCanvas() {
                         })()}
                       </div>
                       {isExecuting && !isPaused && <div className="seq-card__spinner" />}
+                      <button
+                        className="seq-card__collapse"
+                        onClick={(e) => { e.stopPropagation(); toggleNodeCollapsed(node.id); }}
+                        title={isCollapsed ? 'Expand activity' : 'Collapse activity'}
+                      >{isCollapsed ? '▸' : '▾'}</button>
                       <button
                         className="seq-card__delete"
                         onClick={(e) => { e.stopPropagation(); deleteNode(node.id); }}

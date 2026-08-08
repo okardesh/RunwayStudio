@@ -43,12 +43,14 @@ export interface WorkflowNodeData {
   isContainer?: boolean; // mirrors ActivityDefinition.isContainer for quick access
   branches?: WorkflowBranch[]; // ordered branch containers for an If activity
   breakpoint?: boolean;  // pauses debug execution before this activity runs
+  collapsed?: boolean;   // folds the activity or block in the workflow designer
 }
 
 export interface WorkflowBranch {
   id: string;
-  kind: 'if' | 'elseIf' | 'else';
+  kind: 'if' | 'elseIf' | 'else' | 'try' | 'catch' | 'finally';
   condition: string;
+  exceptionType?: string;
   childIds: string[];
 }
 

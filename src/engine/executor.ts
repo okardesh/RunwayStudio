@@ -230,6 +230,54 @@ export async function executeWorkflow(
         continue;
       }
 
+      if (node.data.activityId === 'try-catch') {
+        const branches = node.data.branches ?? [];
+        const runBranch = async (branch: typeof branches[number], label: string): Promise<'completed' | 'failed' | 'stopped'> => {
+          const children = branch.childIds.map((id) => nodes.find((item) => item.id === id)).filter(Boolean) as Node<WorkflowNodeData>[];
+          if (children.length > 0) onLog(`  ${label} branch`, 'Info');
+          for (const child of children) {
+            if (_stopRequested) return 'stopped';
+            onNodeStart(child.id);
+            await maybeBreak(child.id, 1);
+            if (_stopRequested) { onNodeEnd(child.id); return 'stopped'; }
+            onLog(`  → ${child.data.label}`, 'Info');
+            const childOk = await runWithValues(child.data.activityId, child.data.properties);
+            onNodeEnd(child.id);
+            if (!childOk) return 'failed';
+          }
+          return 'completed';
+        };
+
+        const tryBranch = branches.find((branch) => branch.kind === 'try');
+        if (!tryBranch) {
+          onNodeEnd(node.id);
+          onLog('✗  Try Catch block has no TRY branch', 'Error');
+          return 'error';
+        }
+
+        let result = await runBranch(tryBranch, 'TRY');
+        if (result === 'failed') {
+          const catches = branches.filter((branch) => branch.kind === 'catch');
+          if (catches.length === 0) onLog('✗  TRY failed and no CATCH branch is available', 'Error');
+          for (let index = 0; result === 'failed' && index < catches.length; index += 1) {
+            onLog(`  CATCH ${index + 1} handling failure`, 'Warning');
+            result = await runBranch(catches[index], `CATCH ${index + 1}`);
+          }
+        }
+
+        const finallyBranch = branches.find((branch) => branch.kind === 'finally');
+        if (finallyBranch) {
+          const finallyResult = await runBranch(finallyBranch, 'FINALLY');
+          if (finallyResult === 'stopped') result = 'stopped';
+          else if (finallyResult === 'failed') result = 'failed';
+        }
+
+        onNodeEnd(node.id);
+        if (result === 'stopped') { onLog('Stopped by user', 'Warning'); return 'stopped'; }
+        if (result === 'failed') { onLog(`✗  "${node.data.label}" failed`, 'Error'); return 'error'; }
+        continue;
+      }
+
       // Open the browser/application context
       const ok = await runWithValues(node.data.activityId, node.data.properties);
       if (!ok) { onNodeEnd(node.id); onLog(`✗  "${node.data.label}" failed`, 'Error'); return 'error'; }
