@@ -21,21 +21,35 @@ const MEMBERS: Record<string, string[]> = {
   Array: ['Length', 'GetLength()', 'Contains()'],
 };
 
+type CompletionMode = 'template' | 'templateMember' | 'closedTemplateMember' | null;
+
 function getSuggestions(value: string, variables: WorkflowVariable[]) {
+  const closedMemberMatch = value.match(/\{\{\s*([A-Za-z_]\w*)\s*\}\}\.([A-Za-z_]*)$/);
+  if (closedMemberMatch) {
+    const variable = variables.find((item) => item.name === closedMemberMatch[1]);
+    const memberQuery = closedMemberMatch[2].toLowerCase();
+    return {
+      mode: 'closedTemplateMember' as CompletionMode,
+      match: closedMemberMatch,
+      suggestions: (MEMBERS[variable?.type ?? ''] ?? []).filter((member) => member.toLowerCase().startsWith(memberQuery)),
+    };
+  }
   const match = value.match(/\{\{([^{}]*)$/);
-  if (!match) return { match: null, suggestions: [] as string[] };
+  if (!match) return { mode: null as CompletionMode, match: null, suggestions: [] as string[] };
   const query = match[1];
   const dot = query.indexOf('.');
   if (dot >= 0) {
     const variable = variables.find((item) => item.name === query.slice(0, dot));
     const memberQuery = query.slice(dot + 1).toLowerCase();
-    return { match, suggestions: (MEMBERS[variable?.type ?? ''] ?? []).filter((member) => member.toLowerCase().startsWith(memberQuery)) };
+    return { mode: 'templateMember' as CompletionMode, match, suggestions: (MEMBERS[variable?.type ?? ''] ?? []).filter((member) => member.toLowerCase().startsWith(memberQuery)) };
   }
   const lowerQuery = query.toLowerCase();
-  return { match, suggestions: variables.filter((variable) => variable.name.toLowerCase().startsWith(lowerQuery)).map((variable) => variable.name) };
+  return { mode: 'template' as CompletionMode, match, suggestions: variables.filter((variable) => variable.name.toLowerCase().startsWith(lowerQuery)).map((variable) => variable.name) };
 }
 
 function applySuggestion(value: string, suggestion: string) {
+  const closedMemberMatch = value.match(/\{\{\s*[A-Za-z_]\w*\s*\}\}\.([A-Za-z_]*)$/);
+  if (closedMemberMatch) return `${value.slice(0, value.length - closedMemberMatch[1].length)}${suggestion}`;
   const match = value.match(/\{\{([^{}]*)$/);
   if (!match) return value;
   const query = match[1];

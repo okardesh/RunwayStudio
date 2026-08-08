@@ -1,4 +1,5 @@
 import { useWorkflowStore } from '../../store/workflowStore';
+import { useUiStore } from '../../store/uiStore';
 import './StatusBar.css';
 
 const STATUS_CONFIG = {
@@ -11,6 +12,7 @@ const STATUS_CONFIG = {
 
 export function StatusBar() {
   const { status } = useWorkflowStore();
+  const statusMessage = useUiStore((state) => state.statusMessage);
   const cfg = STATUS_CONFIG[status];
 
   return (
@@ -24,6 +26,7 @@ export function StatusBar() {
           <span className="status-indicator__label" style={{ color: cfg.color }}>
             {cfg.label}
           </span>
+          {statusMessage && <span className="status-bar__message">{statusMessage}</span>}
         </div>
       </div>
 

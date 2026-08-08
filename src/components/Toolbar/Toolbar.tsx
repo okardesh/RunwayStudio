@@ -10,8 +10,8 @@ interface ToolbarProps {
 }
 
 export function Toolbar({ activeTab }: ToolbarProps) {
-  const { projectName, status, setProjectName, clearWorkflow, nodes } = useWorkflowStore();
-  const { activeBottomPanelTab, setActiveBottomPanelTab, toggleRecorder } = useUiStore();
+  const { projectName, status, isDirty, setProjectName, clearWorkflow, nodes } = useWorkflowStore();
+  const { activeBottomPanelTab, setActiveBottomPanelTab, setStatusMessage, toggleRecorder } = useUiStore();
   const [editingName, setEditingName] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -73,7 +73,15 @@ export function Toolbar({ activeTab }: ToolbarProps) {
   const handleStepOver = useCallback(() => resumeDebug('step-over'), []);
   const handleRestart = useCallback(() => { requestStop(); setTimeout(() => startRun(true), 60); }, [startRun]);
 
-  const handleSave = useCallback(() => { saveWorkflow(); }, []);
+  const handleSave = useCallback(async () => {
+    if (await saveWorkflow()) setStatusMessage('Workflow saved.');
+  }, [setStatusMessage]);
+
+  const handleNew = useCallback(() => {
+    if (!window.confirm('Create a new workflow? Any unsaved changes will be discarded.')) return;
+    clearWorkflow();
+    setStatusMessage('New workflow created.');
+  }, [clearWorkflow, setStatusMessage]);
 
   const handleLoad = useCallback(async () => {
     const handledNatively = await openWorkflow();
@@ -97,11 +105,11 @@ export function Toolbar({ activeTab }: ToolbarProps) {
 
       <div className="ribbon__group">
         <div className="ribbon__btns">
-          <button className="rbn-btn" onClick={clearWorkflow} title="New Workflow">
+          <button className="rbn-btn" onClick={handleNew} title="New Workflow (Ctrl+N)">
             <span className="rbn-btn__icon">📄</span>
             <span className="rbn-btn__label">New</span>
           </button>
-          <button className="rbn-btn" onClick={handleSave} title="Save Workflow">
+          <button className="rbn-btn" onClick={handleSave} disabled={!isDirty} title="Save Workflow (Ctrl+S)">
             <span className="rbn-btn__icon">💾</span>
             <span className="rbn-btn__label">Save</span>
           </button>

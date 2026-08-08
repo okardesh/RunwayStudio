@@ -68,11 +68,30 @@ async function runActivity(
   return browserFallback(activityId, properties, onLog);
 }
 
+function resolveMember(value: unknown, member: string) {
+  const text = String(value ?? '');
+  switch (member) {
+    case 'Length': return text.length;
+    case 'ToLower()': return text.toLowerCase();
+    case 'ToUpper()': return text.toUpperCase();
+    case 'Trim()': return text.trim();
+    case 'ToString()': return text;
+    default: return undefined;
+  }
+}
+
 function resolveProperties(properties: Record<string, unknown>, values: Record<string, unknown>) {
+  const resolveVariable = (_match: string, name: string, member?: string) => {
+    if (!(name in values)) return _match;
+    const resolved = member ? resolveMember(values[name], member) : values[name];
+    return resolved === undefined ? _match : String(resolved);
+  };
   return Object.fromEntries(Object.entries(properties).map(([key, value]) => [
     key,
     typeof value === 'string'
-      ? value.replace(/\{\{\s*([A-Za-z_]\w*)\s*\}\}/g, (_match, name: string) => String(values[name] ?? `{{${name}}}`))
+      ? value
+        .replace(/\{\{\s*([A-Za-z_]\w*)\s*\}\}\.([A-Za-z_]\w*(?:\(\))?)/g, resolveVariable)
+        .replace(/\{\{\s*([A-Za-z_]\w*)(?:\.([A-Za-z_]\w*(?:\(\))?))?\s*\}\}/g, resolveVariable)
       : value,
   ]));
 }

@@ -24,6 +24,7 @@ interface WorkflowState {
   selectedNodeId: string | null;
   executingNodeId: string | null;
   status: WorkflowStatus;
+  isDirty: boolean;
   projectName: string;
   filePath: string | null; // last path Save wrote to / Open read from — repeat Save overwrites this
   clipboard: { node: Node<WorkflowNodeData>; children: Node<WorkflowNodeData>[] } | null; // Ctrl+C target, not persisted
@@ -50,7 +51,9 @@ interface WorkflowState {
   loadWorkflow: (data: { nodes: Node<WorkflowNodeData>[]; edges: Edge[]; variables: WorkflowVariable[]; projectName: string }, filePath?: string | null) => void;
   setFilePath: (filePath: string | null) => void;
   copySelectedNode: () => void;
+  cutSelectedNode: () => void;
   pasteNode: () => void;
+  markSaved: () => void;
 }
 
 export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
@@ -60,6 +63,7 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
   selectedNodeId: null,
   executingNodeId: null,
   status: 'idle',
+  isDirty: false,
   projectName: 'New Workflow',
   filePath: null,
   clipboard: null,
@@ -67,10 +71,11 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
   onNodesChange: (changes) =>
     set((state) => ({
       nodes: applyNodeChanges(changes, state.nodes) as Node<WorkflowNodeData>[],
+      isDirty: true,
     })),
 
   onEdgesChange: (changes) =>
-    set((state) => ({ edges: applyEdgeChanges(changes, state.edges) })),
+    set((state) => ({ edges: applyEdgeChanges(changes, state.edges), isDirty: true })),
 
   onConnect: (connection) =>
     set((state) => ({
@@ -82,6 +87,7 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
         },
         state.edges
       ),
+      isDirty: true,
     })),
 
   addNode: (activityId, position, parentNodeId?) => {
@@ -115,7 +121,7 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
       },
     };
 
-    set((state) => ({ nodes: [...state.nodes, newNode] }));
+    set((state) => ({ nodes: [...state.nodes, newNode], isDirty: true }));
   },
 
   addNodeAtIndex: (activityId, index) => {
@@ -140,7 +146,7 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
     set((state) => {
       const next = [...state.nodes];
       next.splice(index, 0, newNode);
-      return { nodes: next, selectedNodeId: newNode.id };
+      return { nodes: next, selectedNodeId: newNode.id, isDirty: true };
     });
   },
 
@@ -175,6 +181,7 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
           childNode,
         ],
         selectedNodeId: childNode.id,
+        isDirty: true,
       };
     });
   },
@@ -185,7 +192,7 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
       const [moved] = topLevel.splice(from, 1);
       topLevel.splice(to, 0, moved);
       const children = state.nodes.filter((n) => n.data.parentId);
-      return { nodes: [...topLevel, ...children] };
+      return { nodes: [...topLevel, ...children], isDirty: true };
     }),
 
   moveChildNode: (parentId, from, to) =>
@@ -199,6 +206,7 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
         nodes: state.nodes.map((n) =>
           n.id === parentId ? { ...n, data: { ...n.data, childIds } } : n
         ),
+        isDirty: true,
       };
     }),
 
@@ -218,6 +226,7 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
               : n
           ),
         selectedNodeId: state.selectedNodeId && toRemove.has(state.selectedNodeId) ? null : state.selectedNodeId,
+          isDirty: true,
       };
     }),
 
@@ -226,6 +235,7 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
       nodes: state.nodes.map((n) =>
         n.id === nodeId ? { ...n, data: { ...n.data, properties } } : n
       ),
+      isDirty: true,
     })),
 
   toggleBreakpoint: (nodeId) =>
@@ -233,6 +243,7 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
       nodes: state.nodes.map((n) =>
         n.id === nodeId ? { ...n, data: { ...n.data, breakpoint: !n.data.breakpoint } } : n
       ),
+      isDirty: true,
     })),
 
   setSelectedNode: (nodeId) => set({ selectedNodeId: nodeId }),
@@ -240,21 +251,24 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
   addVariable: (variable) =>
     set((state) => ({
       variables: [...state.variables, { ...variable, id: uuidv4() }],
+      isDirty: true,
     })),
 
   removeVariable: (variableId) =>
     set((state) => ({
       variables: state.variables.filter((v) => v.id !== variableId),
+      isDirty: true,
     })),
 
   updateVariable: (variableId, changes) =>
     set((state) => ({
       variables: state.variables.map((v) => v.id === variableId ? { ...v, ...changes } : v),
+      isDirty: true,
     })),
 
   setStatus: (status) => set({ status }),
 
-  setProjectName: (name) => set({ projectName: name }),
+  setProjectName: (name) => set({ projectName: name, isDirty: true }),
 
   clearWorkflow: () =>
     set({
@@ -265,6 +279,7 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
       executingNodeId: null,
       status: 'idle',
       filePath: null,
+      isDirty: false,
     }),
 
   setExecutingNodeId: (id) => set({ executingNodeId: id }),
@@ -279,6 +294,7 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
       executingNodeId: null,
       status: 'idle',
       filePath,
+      isDirty: false,
     }),
 
   setFilePath: (filePath) => set({ filePath }),
@@ -292,6 +308,26 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
         .filter(Boolean) as Node<WorkflowNodeData>[];
       return { clipboard: { node, children } };
     }),
+  cutSelectedNode: () =>
+    set((state) => {
+      const node = state.nodes.find((item) => item.id === state.selectedNodeId);
+      if (!node) return state;
+      const children = (node.data.childIds ?? [])
+        .map((id) => state.nodes.find((item) => item.id === id))
+        .filter(Boolean) as Node<WorkflowNodeData>[];
+      const toRemove = new Set([node.id, ...children.map((child) => child.id)]);
+      return {
+        clipboard: { node, children },
+        nodes: state.nodes
+          .filter((item) => !toRemove.has(item.id))
+          .map((item) => item.id === node.data.parentId
+            ? { ...item, data: { ...item.data, childIds: (item.data.childIds ?? []).filter((id) => id !== node.id) } }
+            : item),
+        selectedNodeId: null,
+        isDirty: true,
+      };
+    }),
+  markSaved: () => set({ isDirty: false }),
 
   pasteNode: () =>
     set((state) => {
@@ -338,7 +374,7 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
         nodes = [...nodes, ...newChildren];
       }
 
-      return { nodes, selectedNodeId: newId };
+      return { nodes, selectedNodeId: newId, isDirty: true };
     }),
 }), {
   name: 'rpa-studio-workflow',

@@ -6,6 +6,7 @@ import { PropertiesPanel } from './components/PropertiesPanel/PropertiesPanel';
 import { StatusBar } from './components/StatusBar/StatusBar';
 import { BottomPanel } from './components/BottomPanel/BottomPanel';
 import { useWorkflowStore } from './store/workflowStore';
+import { useUiStore } from './store/uiStore';
 import { saveWorkflow, openWorkflow } from './engine/fileOps';
 import './App.css';
 
@@ -21,20 +22,33 @@ function App() {
   // Toolbar reacts to activeTab itself (starts/stops the debug run) — this just switches views.
   const handleTabChange = (tab: Tab) => setActiveTab(tab);
 
-  // Ctrl+S/O/N always act on the workflow (matches every desktop app's convention);
-  // Ctrl+C/P only do so outside text fields, so normal text copy/paste still works.
+  // File commands work from any part of the app; activity clipboard commands leave text fields alone.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
       const key = e.key.toLowerCase();
+      const workflow = useWorkflowStore.getState();
+      const ui = useUiStore.getState();
 
-      if (key === 's') { e.preventDefault(); saveWorkflow(); return; }
+      if (key === 's') {
+        e.preventDefault();
+        if (workflow.isDirty) void saveWorkflow().then((saved) => { if (saved) ui.setStatusMessage('Workflow saved.'); });
+        return;
+      }
       if (key === 'o') { e.preventDefault(); openWorkflow(); return; }
-      if (key === 'n') { e.preventDefault(); useWorkflowStore.getState().clearWorkflow(); return; }
+      if (key === 'n') {
+        e.preventDefault();
+        if (window.confirm('Create a new workflow? Any unsaved changes will be discarded.')) {
+          workflow.clearWorkflow();
+          ui.setStatusMessage('New workflow created.');
+        }
+        return;
+      }
 
       if (isEditableTarget(e.target)) return;
-      if (key === 'c') { e.preventDefault(); useWorkflowStore.getState().copySelectedNode(); return; }
-      if (key === 'p') { e.preventDefault(); useWorkflowStore.getState().pasteNode(); return; }
+      if (key === 'c') { e.preventDefault(); workflow.copySelectedNode(); return; }
+      if (key === 'x') { e.preventDefault(); workflow.cutSelectedNode(); return; }
+      if (key === 'v') { e.preventDefault(); workflow.pasteNode(); return; }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);

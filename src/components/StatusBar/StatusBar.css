@@ -45,6 +45,12 @@
   font-weight: 400;
 }
 
+.status-bar__message {
+  padding-left: 8px;
+  color: #107C10;
+  font-size: 11px;
+}
+
 .status-bar__sep {
   width: 1px;
   height: 12px;

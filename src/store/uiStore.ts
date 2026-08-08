@@ -16,6 +16,7 @@ interface UiState {
   activeBottomPanelTab: BottomPanelTab;
   recorderOpen: boolean;
   outputMessages: OutputMessage[];
+  statusMessage: string | null;
 
   setActivitySearchQuery: (query: string) => void;
   toggleCategory: (categoryId: string) => void;
@@ -24,6 +25,7 @@ interface UiState {
   toggleRecorder: () => void;
   addOutputMessage: (message: Omit<OutputMessage, 'id' | 'timestamp'>) => void;
   clearOutput: () => void;
+  setStatusMessage: (message: string | null) => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -33,6 +35,7 @@ export const useUiStore = create<UiState>((set) => ({
   activeBottomPanelTab: 'dataManager',
   recorderOpen: false,
   outputMessages: [],
+  statusMessage: null,
 
   setActivitySearchQuery: (query) => set({ activitySearchQuery: query }),
 
@@ -62,4 +65,6 @@ export const useUiStore = create<UiState>((set) => ({
     })),
 
   clearOutput: () => set({ outputMessages: [] }),
+
+  setStatusMessage: (statusMessage) => set({ statusMessage }),
 }));
