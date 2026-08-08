@@ -31,7 +31,8 @@ function createWindow() {
     minWidth: 1100,
     minHeight: 700,
     backgroundColor: '#1E1F2E',
-    title: 'RPA Studio',
+    title: 'Runway Studio',
+    icon: path.join(APP_ROOT, 'public', 'logo.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
       nodeIntegration: false,

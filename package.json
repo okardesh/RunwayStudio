@@ -33,8 +33,8 @@
   },
   "build": {
     "appId": "com.rpa.studio",
-    "productName": "RPA Studio",
-    "copyright": "Copyright © 2026 RPA Studio",
+    "productName": "Runway Studio",
+    "copyright": "Copyright © 2026 Runway Studio",
     "files": ["dist/**/*", "dist-electron/**/*"],
     "directories": { "output": "release" },
     "win": {

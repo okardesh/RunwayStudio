@@ -44,7 +44,7 @@ function App() {
     <div className="app">
       <header className="app-header">
         <div className="app-header__brand">
-          <span className="app-header__icon">⚡</span>
+          <img className="app-header__logo" src="/logo.png" alt="Runway Studio" />
         </div>
         <button
           className={`app-header__tab${activeTab === 'design' ? ' app-header__tab--active' : ''}`}

@@ -28,7 +28,7 @@ const isElectron = () =>
 
 // Placeholder thumbnails for browser-only mode
 const BROWSER_FALLBACK: WindowEntry[] = [
-  { id: 'current', name: document.title || 'RPA Studio', thumbnail: '', appIcon: null, isCurrent: true },
+  { id: 'current', name: document.title || 'Runway Studio', thumbnail: '', appIcon: null, isCurrent: true },
   { id: 'chrome', name: 'Google Chrome', thumbnail: '', appIcon: null },
   { id: 'msedge', name: 'Microsoft Edge', thumbnail: '', appIcon: null },
   { id: 'firefox', name: 'Firefox', thumbnail: '', appIcon: null },

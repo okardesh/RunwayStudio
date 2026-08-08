@@ -45,10 +45,10 @@ body,
   flex-shrink: 0;
 }
 
-.app-header__icon {
-  font-size: 13px;
-  color: white;
-  opacity: 0.9;
+.app-header__logo {
+  height: 22px;
+  width: auto;
+  display: block;
 }
 
 /* Design / Debug tabs in the title bar */
