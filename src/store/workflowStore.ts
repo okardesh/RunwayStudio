@@ -12,7 +12,7 @@ import {
   MarkerType,
 } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
-import type { WorkflowNodeData, WorkflowVariable, WorkflowStatus } from '../types';
+import type { WorkflowBranch, WorkflowNodeData, WorkflowVariable, WorkflowStatus } from '../types';
 import { getActivity } from '../activities/registry';
 
 const createInitialNodes = (): Node<WorkflowNodeData>[] => [];
@@ -35,6 +35,10 @@ interface WorkflowState {
   addNode: (activityId: string, position: { x: number; y: number }, parentNodeId?: string) => void;
   addNodeAtIndex: (activityId: string, index: number) => void;
   addChildNodeAt: (parentId: string, activityId: string, index: number) => void;
+  addIfBranch: (parentId: string) => void;
+  updateIfBranch: (parentId: string, branchId: string, changes: Partial<Pick<WorkflowBranch, 'condition'>>) => void;
+  addIfBranchChildAt: (parentId: string, branchId: string, activityId: string, index: number) => void;
+  moveIfBranchChild: (parentId: string, sourceBranchId: string, targetBranchId: string, childId: string, index: number) => void;
   moveNode: (from: number, to: number) => void;
   moveChildNode: (parentId: string, from: number, to: number) => void;
   deleteNode: (nodeId: string) => void;
@@ -118,6 +122,12 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
         icon: activity.icon,
         color: activity.color,
         properties: defaultProperties,
+        isContainer: activity.isContainer ?? false,
+        childIds: activity.isContainer ? [] : undefined,
+        branches: activityId === 'if' ? [
+          { id: uuidv4(), kind: 'if', condition: '', childIds: [] },
+          { id: uuidv4(), kind: 'else', condition: '', childIds: [] },
+        ] : undefined,
       },
     };
 
@@ -141,6 +151,10 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
         properties: defaultProperties,
         isContainer: activity.isContainer ?? false,
         childIds: activity.isContainer ? [] : undefined,
+        branches: activityId === 'if' ? [
+          { id: uuidv4(), kind: 'if', condition: '', childIds: [] },
+          { id: uuidv4(), kind: 'else', condition: '', childIds: [] },
+        ] : undefined,
       },
     };
     set((state) => {
@@ -186,6 +200,90 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
     });
   },
 
+  addIfBranch: (parentId) =>
+    set((state) => {
+      const parent = state.nodes.find((node) => node.id === parentId);
+      if (!parent || parent.data.activityId !== 'if') return state;
+      const branches = [...(parent.data.branches ?? [])];
+      const elseIndex = branches.findIndex((branch) => branch.kind === 'else');
+      branches.splice(elseIndex === -1 ? branches.length : elseIndex, 0, {
+        id: uuidv4(), kind: 'elseIf', condition: '', childIds: [],
+      });
+      return {
+        nodes: state.nodes.map((node) => node.id === parentId
+          ? { ...node, data: { ...node.data, branches } }
+          : node),
+        isDirty: true,
+      };
+    }),
+
+  updateIfBranch: (parentId, branchId, changes) =>
+    set((state) => ({
+      nodes: state.nodes.map((node) => node.id === parentId
+        ? { ...node, data: { ...node.data, branches: (node.data.branches ?? []).map((branch) =>
+          branch.id === branchId ? { ...branch, ...changes } : branch
+        ) } }
+        : node),
+      isDirty: true,
+    })),
+
+  addIfBranchChildAt: (parentId, branchId, activityId, index) => {
+    const activity = getActivity(activityId);
+    if (!activity) return;
+    const properties: Record<string, unknown> = {};
+    activity.properties.forEach((property) => { properties[property.name] = property.defaultValue ?? ''; });
+    const childNode: Node<WorkflowNodeData> = {
+      id: uuidv4(), type: 'activityNode', position: { x: 0, y: 0 },
+      data: { activityId, label: activity.name, icon: activity.icon, color: activity.color, properties, parentId, branchId },
+    };
+    set((state) => ({
+      nodes: [
+        ...state.nodes.map((node) => node.id === parentId ? {
+          ...node,
+          data: {
+            ...node.data,
+            branches: (node.data.branches ?? []).map((branch) => branch.id === branchId ? {
+              ...branch, childIds: [...branch.childIds.slice(0, index), childNode.id, ...branch.childIds.slice(index)],
+            } : branch),
+          },
+        } : node),
+        childNode,
+      ],
+      selectedNodeId: childNode.id,
+      isDirty: true,
+    }));
+  },
+
+  moveIfBranchChild: (parentId, sourceBranchId, targetBranchId, childId, index) =>
+    set((state) => {
+      const parent = state.nodes.find((node) => node.id === parentId);
+      if (!parent) return state;
+      const source = parent.data.branches?.find((branch) => branch.id === sourceBranchId);
+      const target = parent.data.branches?.find((branch) => branch.id === targetBranchId);
+      if (!source || !target || !source.childIds.includes(childId)) return state;
+
+      const branches = (parent.data.branches ?? []).map((branch) => {
+        if (branch.id === sourceBranchId && branch.id === targetBranchId) {
+          const childIds = branch.childIds.filter((id) => id !== childId);
+          childIds.splice(Math.min(index, childIds.length), 0, childId);
+          return { ...branch, childIds };
+        }
+        if (branch.id === sourceBranchId) return { ...branch, childIds: branch.childIds.filter((id) => id !== childId) };
+        if (branch.id === targetBranchId) {
+          const childIds = [...branch.childIds];
+          childIds.splice(Math.min(index, childIds.length), 0, childId);
+          return { ...branch, childIds };
+        }
+        return branch;
+      });
+      return {
+        nodes: state.nodes.map((node) => node.id === parentId
+          ? { ...node, data: { ...node.data, branches } }
+          : node),
+        isDirty: true,
+      };
+    }),
+
   moveNode: (from, to) =>
     set((state) => {
       const topLevel = state.nodes.filter((n) => !n.data.parentId);
@@ -214,7 +312,11 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
     set((state) => {
       const target = state.nodes.find((n) => n.id === nodeId);
       // Collect IDs to remove: the node itself plus any children if it's a container
-      const toRemove = new Set([nodeId, ...(target?.data.childIds ?? [])]);
+      const toRemove = new Set([
+        nodeId,
+        ...(target?.data.childIds ?? []),
+        ...(target?.data.branches ?? []).flatMap((branch) => branch.childIds),
+      ]);
       // If it's a child, remove its ID from the parent's childIds
       const parentId = target?.data.parentId;
       return {
@@ -222,7 +324,17 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
           .filter((n) => !toRemove.has(n.id))
           .map((n) =>
             n.id === parentId
-              ? { ...n, data: { ...n.data, childIds: (n.data.childIds ?? []).filter((id) => id !== nodeId) } }
+              ? {
+                ...n,
+                data: {
+                  ...n.data,
+                  childIds: (n.data.childIds ?? []).filter((id) => id !== nodeId),
+                  branches: (n.data.branches ?? []).map((branch) => ({
+                    ...branch,
+                    childIds: branch.childIds.filter((id) => id !== nodeId),
+                  })),
+                },
+              }
               : n
           ),
         selectedNodeId: state.selectedNodeId && toRemove.has(state.selectedNodeId) ? null : state.selectedNodeId,
@@ -321,7 +433,16 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
         nodes: state.nodes
           .filter((item) => !toRemove.has(item.id))
           .map((item) => item.id === node.data.parentId
-            ? { ...item, data: { ...item.data, childIds: (item.data.childIds ?? []).filter((id) => id !== node.id) } }
+            ? {
+              ...item,
+              data: {
+                ...item.data,
+                childIds: (item.data.childIds ?? []).filter((id) => id !== node.id),
+                branches: (item.data.branches ?? []).map((branch) => branch.id === node.data.branchId
+                  ? { ...branch, childIds: branch.childIds.filter((id) => id !== node.id) }
+                  : branch),
+              },
+            }
             : item),
         selectedNodeId: null,
         isDirty: true,
@@ -359,12 +480,23 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
 
       let nodes: Node<WorkflowNodeData>[];
       if (parentId) {
-        // Copied node was a child — paste as a new sibling right after the original.
+        // Copied node was a child — paste as a new sibling in its container or IF branch.
         const parent = state.nodes.find((n) => n.id === parentId)!;
-        const childIds = [...(parent.data.childIds ?? [])];
-        const origIdx = childIds.indexOf(srcNode.id);
-        childIds.splice(origIdx === -1 ? childIds.length : origIdx + 1, 0, newId);
-        nodes = state.nodes.map((n) => (n.id === parentId ? { ...n, data: { ...n.data, childIds } } : n));
+        if (srcNode.data.branchId) {
+          const branches = (parent.data.branches ?? []).map((branch) => {
+            if (branch.id !== srcNode.data.branchId) return branch;
+            const childIds = [...branch.childIds];
+            const originalIndex = childIds.indexOf(srcNode.id);
+            childIds.splice(originalIndex === -1 ? childIds.length : originalIndex + 1, 0, newId);
+            return { ...branch, childIds };
+          });
+          nodes = state.nodes.map((item) => item.id === parentId ? { ...item, data: { ...item.data, branches } } : item);
+        } else {
+          const childIds = [...(parent.data.childIds ?? [])];
+          const originalIndex = childIds.indexOf(srcNode.id);
+          childIds.splice(originalIndex === -1 ? childIds.length : originalIndex + 1, 0, newId);
+          nodes = state.nodes.map((item) => item.id === parentId ? { ...item, data: { ...item.data, childIds } } : item);
+        }
         nodes = [...nodes, newNode, ...newChildren];
       } else {
         // Top-level node — paste right after the original.

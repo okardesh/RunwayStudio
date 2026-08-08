@@ -8,6 +8,7 @@ interface Props {
   placeholder?: string;
   variables: WorkflowVariable[];
   multiline?: boolean;
+  onClick?: (event: React.MouseEvent) => void;
 }
 
 const MEMBERS: Record<string, string[]> = {
@@ -100,7 +101,7 @@ function AdvancedExpressionEditor({ initialValue, onSave, onClose, variables }: 
   );
 }
 
-export function ExpressionInput({ value, onChange, placeholder, variables, multiline = false }: Props) {
+export function ExpressionInput({ value, onChange, placeholder, variables, multiline = false, onClick }: Props) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [isEditorOpen, setEditorOpen] = useState(false);
   const { match, suggestions } = useMemo(() => getSuggestions(value, variables), [value, variables]);
@@ -122,7 +123,7 @@ export function ExpressionInput({ value, onChange, placeholder, variables, multi
   };
 
   return (
-    <div className="expression-input">
+    <div className="expression-input" onClick={onClick}>
       <div className="expression-input__field">
         {multiline ? <textarea {...inputProps} rows={10} spellCheck={false} /> : <input type="text" {...inputProps} />}
         {!multiline && <button type="button" className="expression-input__advanced" onClick={() => setEditorOpen(true)} title="Open advanced editor">...</button>}

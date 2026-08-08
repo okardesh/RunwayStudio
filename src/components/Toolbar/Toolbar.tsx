@@ -23,6 +23,10 @@ export function Toolbar({ activeTab }: ToolbarProps) {
   const startRun = useCallback(async (debug: boolean) => {
     const store = useWorkflowStore.getState();
     const uiStore = useUiStore.getState();
+    if (!await saveWorkflow()) {
+      uiStore.setStatusMessage('Workflow was not run because it was not saved.');
+      return;
+    }
     uiStore.clearOutput();
     uiStore.setActiveBottomPanelTab('output');
     store.setStatus('running');

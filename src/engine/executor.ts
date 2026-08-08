@@ -96,6 +96,33 @@ function resolveProperties(properties: Record<string, unknown>, values: Record<s
   ]));
 }
 
+function evaluateCondition(expression: string, values: Record<string, unknown>): boolean {
+  const resolved = String(resolveProperties({ expression }, values).expression ?? '').trim();
+  if (resolved.toLowerCase() === 'true') return true;
+  if (resolved.toLowerCase() === 'false' || !resolved) return false;
+
+  const comparison = resolved.match(/^(.*?)\s*(==|!=|>=|<=|>|<)\s*(.*?)$/);
+  if (!comparison) return false;
+  const [, rawLeft, operator, rawRight] = comparison;
+  const unquote = (value: string) => value.trim().replace(/^(["'])(.*)\1$/, '$2');
+  const left = unquote(rawLeft);
+  const right = unquote(rawRight);
+  const leftNumber = Number(left);
+  const rightNumber = Number(right);
+  const numeric = !Number.isNaN(leftNumber) && !Number.isNaN(rightNumber);
+  const first = numeric ? leftNumber : left;
+  const second = numeric ? rightNumber : right;
+  switch (operator) {
+    case '==': return first === second;
+    case '!=': return first !== second;
+    case '>': return first > second;
+    case '>=': return first >= second;
+    case '<': return first < second;
+    case '<=': return first <= second;
+    default: return false;
+  }
+}
+
 export interface DebugOptions {
   debug?: boolean;
   hasBreakpoint?: (nodeId: string) => boolean;
@@ -161,6 +188,48 @@ export async function executeWorkflow(
     onLog(`→ ${node.data.label}`, 'Info');
 
     if (node.data.isContainer) {
+      if (node.data.activityId === 'if') {
+        const branches = node.data.branches ?? [];
+        let selectedBranch = undefined;
+        for (const branch of branches) {
+          if (branch.kind === 'else') {
+            selectedBranch ??= branch;
+            continue;
+          }
+          if (!branch.condition.trim()) {
+            onNodeEnd(node.id);
+            onLog(`✗  ${branch.kind === 'if' ? 'IF' : 'ELSE IF'} condition is required`, 'Error');
+            return 'error';
+          }
+          if (evaluateCondition(branch.condition, values)) {
+            selectedBranch = branch;
+            break;
+          }
+        }
+
+        if (!selectedBranch) {
+          onLog('  No IF branch matched.', 'Warning');
+          onNodeEnd(node.id);
+          continue;
+        }
+
+        const branchLabel = selectedBranch.kind === 'if' ? 'IF' : selectedBranch.kind === 'elseIf' ? 'ELSE IF' : 'ELSE';
+        onLog(`  ${branchLabel} branch selected`, 'Info');
+        const children = selectedBranch.childIds.map((id) => nodes.find((item) => item.id === id)).filter(Boolean) as Node<WorkflowNodeData>[];
+        for (const child of children) {
+          if (_stopRequested) { onLog('Stopped by user', 'Warning'); onNodeEnd(node.id); return 'stopped'; }
+          onNodeStart(child.id);
+          await maybeBreak(child.id, 1);
+          if (_stopRequested) { onNodeEnd(child.id); onNodeEnd(node.id); onLog('Stopped by user', 'Warning'); return 'stopped'; }
+          onLog(`  → ${child.data.label}`, 'Info');
+          const childOk = await runWithValues(child.data.activityId, child.data.properties);
+          onNodeEnd(child.id);
+          if (!childOk) { onNodeEnd(node.id); onLog(`✗  "${child.data.label}" failed`, 'Error'); return 'error'; }
+        }
+        onNodeEnd(node.id);
+        continue;
+      }
+
       // Open the browser/application context
       const ok = await runWithValues(node.data.activityId, node.data.properties);
       if (!ok) { onNodeEnd(node.id); onLog(`✗  "${node.data.label}" failed`, 'Error'); return 'error'; }

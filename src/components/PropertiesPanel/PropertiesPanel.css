@@ -131,7 +131,7 @@
   padding: 2px 4px;
   display: flex;
   align-items: center;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .pgrid-input {
@@ -163,8 +163,11 @@
 
 .expression-input {
   position: relative;
+  z-index: 1;
   width: 100%;
 }
+
+.expression-input:focus-within { z-index: 21; }
 
 .expression-input__field { display: flex; width: 100%; }
 .expression-input__field .pgrid-input { min-width: 0; }

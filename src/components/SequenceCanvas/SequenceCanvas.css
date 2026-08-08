@@ -32,6 +32,35 @@
   animation: none;
 }
 
+.if-card {
+  overflow: hidden;
+  border: 1px solid #D88947;
+  border-radius: 4px;
+  background: #FFFDFC;
+}
+.if-card--selected { box-shadow: 0 0 0 2px rgba(230, 81, 0, 0.22); }
+.if-card--executing { border-color: #107C10; box-shadow: 0 0 0 2px rgba(16, 124, 16, 0.2); }
+.if-card__hdr { display: flex; align-items: center; gap: 7px; padding: 7px 9px; background: #FCE9DB; border-bottom: 1px solid #E6C2A5; color: #813A00; }
+.if-card__icon { width: 18px; text-align: center; font-size: 14px; }
+.if-card__title { flex: 1; font-size: 12px; font-weight: 700; }
+.if-card__delete { border: 0; background: transparent; color: #8A5B3C; cursor: pointer; font-size: 16px; }
+.if-card__branches { padding: 8px; display: grid; gap: 7px; }
+.if-branch { border: 1px solid #E0D2C6; background: #FFF; min-height: 68px; }
+.if-branch--invalid { border-color: #C50F1F; }
+.if-branch__hdr { display: flex; align-items: center; gap: 8px; padding: 5px 7px; background: #F7F3F0; border-bottom: 1px solid #EAE1DA; }
+.if-branch__label { width: 54px; color: #813A00; font-size: 10px; font-weight: 700; }
+.if-branch__hdr .expression-input { flex: 1; min-width: 0; }
+.if-branch__hdr .pgrid-input { padding: 3px 5px; border: 1px solid #C8B6A8; background: #FFF; font: 11px Consolas, 'Courier New', monospace; }
+.if-branch__hdr .pgrid-input:focus { border-color: #0078D4; box-shadow: 0 0 0 1px #0078D4; }
+.if-branch__validation { padding: 3px 7px; background: #FDE7E7; color: #C50F1F; font-size: 10px; }
+.if-branch__body { padding: 5px; display: grid; gap: 4px; min-height: 35px; }
+.if-branch__empty { padding: 6px; color: #999; font-size: 11px; font-style: italic; text-align: center; }
+.if-branch__body .seq-card { min-height: 30px; }
+.if-branch__activity { cursor: grab; }
+.if-branch__activity:active { cursor: grabbing; opacity: 0.55; }
+.if-card__add-else { width: calc(100% - 16px); margin: 0 8px 8px; padding: 5px; border: 1px dashed #C77A39; background: #FFF7F0; color: #9A4D0F; font: 11px inherit; cursor: pointer; }
+.if-card__add-else:hover { background: #FCE9DB; }
+
 /* Breakpoint gutter dot — always visible as a faint ring; filled red when set */
 .seq-card__bp {
   flex-shrink: 0;

@@ -5,6 +5,7 @@ import { useWorkflowStore } from '../../store/workflowStore';
 import { getActivity } from '../../activities/registry';
 import type { WorkflowNodeData } from '../../types';
 import { IndicateModal } from '../IndicateModal/IndicateModal';
+import { ExpressionInput } from '../PropertiesPanel/ExpressionInput';
 import './SequenceCanvas.css';
 
 // ── Container card (Use Application/Browser) ─────────────────────────────────
@@ -196,6 +197,80 @@ function ContainerCard({
   );
 }
 
+function IfCard({ node, isSelected, isExecuting, onSelect, onDelete }: {
+  node: Node<WorkflowNodeData>;
+  isSelected: boolean;
+  isExecuting: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+}) {
+  const { nodes, variables, addIfBranch, addIfBranchChildAt, moveIfBranchChild, deleteNode, selectedNodeId, setSelectedNode, updateIfBranch } = useWorkflowStore();
+  const branches = node.data.branches ?? [];
+  const hasConditionalElse = branches.some((branch) => branch.kind === 'elseIf');
+
+  return (
+    <div className={`if-card${isSelected ? ' if-card--selected' : ''}${isExecuting ? ' if-card--executing' : ''}`} onClick={(event) => { event.stopPropagation(); onSelect(); }}>
+      <div className="if-card__hdr">
+        <span className="if-card__icon">{node.data.icon}</span>
+        <span className="if-card__title">{node.data.label}</span>
+        <button className="if-card__delete" onClick={(event) => { event.stopPropagation(); onDelete(); }} title="Remove If">×</button>
+      </div>
+      <div className="if-card__branches">
+        {branches.map((branch) => {
+          const children = branch.childIds.map((id) => nodes.find((item) => item.id === id)).filter(Boolean) as Node<WorkflowNodeData>[];
+          const branchLabel = branch.kind === 'if' ? 'IF' : branch.kind === 'elseIf' ? 'ELSE IF' : 'ELSE';
+          const conditionRequired = branch.kind === 'if' || branch.kind === 'elseIf';
+          const isInvalid = conditionRequired && hasConditionalElse && !branch.condition.trim();
+          return (
+            <section
+              key={branch.id}
+              className={`if-branch${isInvalid ? ' if-branch--invalid' : ''}`}
+              onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; }}
+              onDrop={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const activityId = event.dataTransfer.getData('application/rpa-activity');
+                const childId = event.dataTransfer.getData('application/rpa-if-child-id');
+                const sourceBranchId = event.dataTransfer.getData('application/rpa-if-branch-id');
+                if (activityId) addIfBranchChildAt(node.id, branch.id, activityId, children.length);
+                else if (childId && sourceBranchId) moveIfBranchChild(node.id, sourceBranchId, branch.id, childId, children.length);
+              }}
+            >
+              <div className="if-branch__hdr">
+                <span className="if-branch__label">{branchLabel}</span>
+                {conditionRequired && (
+                  <ExpressionInput
+                    value={branch.condition}
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={(condition) => updateIfBranch(node.id, branch.id, { condition })}
+                    placeholder={branch.kind === 'if' ? 'Condition, e.g. {{total}} == "10"' : 'Condition required'}
+                    variables={variables}
+                  />
+                )}
+              </div>
+              {isInvalid && <div className="if-branch__validation">Condition required when using multiple ELSE branches.</div>}
+              <div className="if-branch__body">
+                {children.length === 0 ? <div className="if-branch__empty">Drop activity here</div> : children.map((child) => (
+                  <div key={child.id} className={`seq-card if-branch__activity${selectedNodeId === child.id ? ' seq-card--selected' : ''}`} style={{ borderLeftColor: child.data.color ?? '#0078D4' }} onClick={(event) => { event.stopPropagation(); setSelectedNode(child.id); }} draggable onDragStart={(event) => {
+                    event.dataTransfer.setData('application/rpa-if-child-id', child.id);
+                    event.dataTransfer.setData('application/rpa-if-branch-id', branch.id);
+                    event.dataTransfer.effectAllowed = 'move';
+                  }}>
+                    <div className="seq-card__icon" style={{ background: child.data.color ?? '#0078D4' }}>{child.data.icon}</div>
+                    <div className="seq-card__body"><span className="seq-card__name">{child.data.label}</span></div>
+                    <button className="seq-card__delete" onClick={(event) => { event.stopPropagation(); deleteNode(child.id); }} title="Remove">×</button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+      <button className="if-card__add-else" onClick={(event) => { event.stopPropagation(); addIfBranch(node.id); }}>+ Add Else</button>
+    </div>
+  );
+}
+
 // ── Sequence canvas ───────────────────────────────────────────────────────────
 
 export function SequenceCanvas() {
@@ -317,6 +392,15 @@ export function SequenceCanvas() {
                 const isExecuting = node.id === executingNodeId;
                 const isSelected = node.id === selectedNodeId;
                 const isDragging = draggingIdx === idx;
+
+                if (node.data.activityId === 'if') {
+                  return (
+                    <div key={node.id} className="seq-item" style={{ opacity: isDragging ? 0.35 : 1 }}>
+                      <IfCard node={node} isSelected={isSelected} isExecuting={isExecuting} onSelect={() => setSelectedNode(node.id)} onDelete={() => deleteNode(node.id)} />
+                      <InsertZone index={idx + 1} active={dropIndex === idx + 1} visible={canvasDragActive} onDragOver={() => setDropIndex(idx + 1)} onDrop={handleZoneDrop} />
+                    </div>
+                  );
+                }
 
                 if (node.data.isContainer) {
                   return (
