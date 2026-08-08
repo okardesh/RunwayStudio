@@ -1,25 +1,32 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useWorkflowStore } from '../../store/workflowStore';
-import { useUiStore } from '../../store/uiStore';
+import { useUiStore, type BottomPanelTab } from '../../store/uiStore';
 import type { WorkflowVariable } from '../../types';
 import './BottomPanel.css';
 
-type MainTab = 'dataManager' | 'output' | 'markers' | 'errors';
 type SubTab = 'variables' | 'arguments' | 'namespaces' | 'connections';
 
-const VAR_TYPES = ['String', 'Int32', 'Double', 'Boolean', 'Array', 'Object', 'DataTable'];
+const VAR_TYPES = [
+  'String', 'Boolean', 'Char', 'Byte', 'SByte', 'Int16', 'Int32', 'Int64',
+  'UInt16', 'UInt32', 'UInt64', 'Single', 'Double', 'Decimal', 'DateTime',
+  'TimeSpan', 'Guid', 'Object', 'Array', 'List', 'Dictionary', 'DataTable',
+];
 
 const LEVEL_COLORS: Record<string, string> = {
   Info: '#0078D4', Warning: '#CA5010', Error: '#C50F1F', Debug: '#7A7A7A',
 };
 
 export function BottomPanel() {
-  const [mainTab, setMainTab] = useState<MainTab>('dataManager');
   const [subTab, setSubTab] = useState<SubTab>('variables');
   const { variables, addVariable, removeVariable, updateVariable } = useWorkflowStore();
-  const { outputMessages, clearOutput } = useUiStore();
+  const { outputMessages, clearOutput, activeBottomPanelTab: mainTab, setActiveBottomPanelTab } = useUiStore();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
+  const outputEndRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (mainTab === 'output') outputEndRef.current?.scrollIntoView({ block: 'end' });
+  }, [mainTab, outputMessages.length]);
 
   const handleCreateVar = () => {
     const name = `variable${variables.length + 1}`;
@@ -37,10 +44,10 @@ export function BottomPanel() {
   };
 
   const mainTabs = [
-    { id: 'dataManager' as MainTab, label: 'Data Manager' },
-    { id: 'output' as MainTab, label: 'Output' },
-    { id: 'markers' as MainTab, label: 'Markers' },
-    { id: 'errors' as MainTab, label: 'Errors' },
+    { id: 'dataManager' as BottomPanelTab, label: 'Data Manager' },
+    { id: 'output' as BottomPanelTab, label: 'Output' },
+    { id: 'markers' as BottomPanelTab, label: 'Markers' },
+    { id: 'errors' as BottomPanelTab, label: 'Errors' },
   ];
 
   const subTabs = [
@@ -58,7 +65,7 @@ export function BottomPanel() {
             <button
               key={id}
               className={`bp__main-tab${mainTab === id ? ' bp__main-tab--active' : ''}`}
-              onClick={() => setMainTab(id)}
+              onClick={() => setActiveBottomPanelTab(id)}
             >
               {label}
             </button>
@@ -128,7 +135,7 @@ export function BottomPanel() {
                       <input
                         className="bp-cell__input"
                         value={v.defaultValue || ''}
-                        placeholder="Enter a VB expression"
+                        placeholder="Enter a default value"
                         onChange={(e) => updateVariable(v.id, { defaultValue: e.target.value })}
                       />
                     </div>
@@ -166,6 +173,7 @@ export function BottomPanel() {
                   </div>
                 ))
               )}
+              <div ref={outputEndRef} />
             </div>
           </div>
         )}

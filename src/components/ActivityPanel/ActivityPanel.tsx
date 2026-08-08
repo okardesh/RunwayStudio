@@ -4,7 +4,7 @@ import { activityCategories } from '../../activities/registry';
 import type { ActivityDefinition } from '../../types';
 import './ActivityPanel.css';
 
-const FAVORITES: string[] = ['use-app-browser', 'click', 'type-text', 'sequence', 'if', 'navigate-to'];
+const FAVORITES: string[] = ['use-app-browser', 'click', 'type-text', 'get-text', 'sequence', 'if', 'navigate-to'];
 const RECENT: string[] = ['use-app-browser', 'navigate-to', 'click', 'type-text', 'get-text', 'sequence', 'if', 'delay'];
 
 const allActivities = activityCategories.flatMap((c) => c.activities);

@@ -1,5 +1,5 @@
 ﻿import type { Node, Edge } from 'reactflow';
-import type { WorkflowNodeData } from '../types';
+import type { WorkflowNodeData, WorkflowVariable } from '../types';
 
 export type LogLevel = 'Info' | 'Warning' | 'Error' | 'Debug';
 export type LogFn = (text: string, level: LogLevel) => void;
@@ -35,7 +35,7 @@ const isElectron = () =>
   typeof window !== 'undefined' && 'electronAPI' in window && typeof (window as any).electronAPI?.executeActivity === 'function';
 
 // Best-effort browser-mode simulation for activities that can be faked in a web page
-function browserFallback(activityId: string, properties: Record<string, unknown>, onLog: LogFn): boolean {
+function browserFallback(activityId: string, properties: Record<string, unknown>, onLog: LogFn): { success: boolean } {
   switch (activityId) {
     case 'use-app-browser':
     case 'open-browser':
@@ -55,17 +55,26 @@ async function runActivity(
   activityId: string,
   properties: Record<string, unknown>,
   onLog: LogFn
-): Promise<boolean> {
+): Promise<{ success: boolean; outputs?: Record<string, unknown> }> {
   if (isElectron()) {
     const api = (window as any).electronAPI;
     const result: { success: boolean; log: string; outputs?: Record<string, unknown> } =
       await api.executeActivity(activityId, properties);
     onLog(`   ${result.log}`, result.success ? 'Info' : 'Error');
-    return result.success;
+    return result;
   }
   // Browser-mode fallback — simulate what we can
   await sleep(300);
   return browserFallback(activityId, properties, onLog);
+}
+
+function resolveProperties(properties: Record<string, unknown>, values: Record<string, unknown>) {
+  return Object.fromEntries(Object.entries(properties).map(([key, value]) => [
+    key,
+    typeof value === 'string'
+      ? value.replace(/\{\{\s*([A-Za-z_]\w*)\s*\}\}/g, (_match, name: string) => String(values[name] ?? `{{${name}}}`))
+      : value,
+  ]));
 }
 
 export interface DebugOptions {
@@ -78,12 +87,19 @@ export interface DebugOptions {
 export async function executeWorkflow(
   nodes: Node<WorkflowNodeData>[],
   _edges: Edge[],
+  variables: WorkflowVariable[],
   onNodeStart: (id: string) => void,
   onNodeEnd:   (id: string) => void,
   onLog: LogFn,
   debugOptions?: DebugOptions
 ): Promise<'completed' | 'stopped' | 'error'> {
   _stopRequested = false;
+  const values = Object.fromEntries(variables.map((variable) => [variable.name, variable.defaultValue]));
+  const runWithValues = async (activityId: string, properties: Record<string, unknown>) => {
+    const result = await runActivity(activityId, resolveProperties(properties, values), onLog);
+    if (result.outputs) Object.assign(values, result.outputs);
+    return result.success;
+  };
 
   const topLevel = nodes.filter((n) => !n.data.parentId);
   if (topLevel.length === 0) {
@@ -127,7 +143,7 @@ export async function executeWorkflow(
 
     if (node.data.isContainer) {
       // Open the browser/application context
-      const ok = await runActivity(node.data.activityId, node.data.properties, onLog);
+      const ok = await runWithValues(node.data.activityId, node.data.properties);
       if (!ok) { onNodeEnd(node.id); onLog(`✗  "${node.data.label}" failed`, 'Error'); return 'error'; }
 
       // Run child activities in sequence
@@ -139,12 +155,12 @@ export async function executeWorkflow(
         await maybeBreak(child.id, 1);
         if (_stopRequested) { onNodeEnd(child.id); onNodeEnd(node.id); onLog('Stopped by user', 'Warning'); return 'stopped'; }
         onLog(`  → ${child.data.label}`, 'Info');
-        const childOk = await runActivity(child.data.activityId, child.data.properties, onLog);
+        const childOk = await runWithValues(child.data.activityId, child.data.properties);
         onNodeEnd(child.id);
         if (!childOk) { onNodeEnd(node.id); onLog(`✗  "${child.data.label}" failed`, 'Error'); return 'error'; }
       }
     } else {
-      const ok = await runActivity(node.data.activityId, node.data.properties, onLog);
+      const ok = await runWithValues(node.data.activityId, node.data.properties);
       if (!ok) { onNodeEnd(node.id); onLog(`✗  "${node.data.label}" failed — execution stopped`, 'Error'); return 'error'; }
     }
 

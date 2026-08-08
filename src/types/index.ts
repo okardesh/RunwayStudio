@@ -1,4 +1,4 @@
-export type PropertyType = 'string' | 'number' | 'boolean' | 'expression' | 'variable' | 'select';
+export type PropertyType = 'string' | 'number' | 'boolean' | 'expression' | 'variable' | 'select' | 'code';
 
 export interface PropertyDefinition {
   name: string;

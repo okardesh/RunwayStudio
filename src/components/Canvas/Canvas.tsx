@@ -9,9 +9,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { useWorkflowStore } from '../../store/workflowStore';
-import { useUiStore } from '../../store/uiStore';
 import { nodeTypes } from '../../nodes';
-import { OutputPanel } from '../OutputPanel/OutputPanel';
 import './Canvas.css';
 
 const SEQUENCE_NODE_W = 260;
@@ -23,7 +21,6 @@ export function Canvas() {
 
   const { nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, setSelectedNode } =
     useWorkflowStore();
-  const showOutputPanel = useUiStore((s) => s.showOutputPanel);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
@@ -118,7 +115,6 @@ export function Canvas() {
         </div>
       )}
 
-      {showOutputPanel && <OutputPanel />}
     </div>
   );
 }

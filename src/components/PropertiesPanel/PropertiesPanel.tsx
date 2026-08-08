@@ -4,12 +4,13 @@ import { useWorkflowStore } from '../../store/workflowStore';
 import { getActivity } from '../../activities/registry';
 import { RecorderModal } from '../Recorder/RecorderModal';
 import { DesktopPickerModal } from '../Recorder/DesktopPickerModal';
+import { ExpressionInput } from './ExpressionInput';
 import './PropertiesPanel.css';
 
 // ── Properties Content (UiPath property grid style) ──────────────────────────
 
 function PropertiesContent() {
-  const { selectedNodeId, nodes, updateNodeProperties } = useWorkflowStore();
+  const { selectedNodeId, nodes, updateNodeProperties, variables } = useWorkflowStore();
   const [recorderFor, setRecorderFor] = useState<string | null>(null);
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
 
@@ -73,6 +74,23 @@ function PropertiesContent() {
 
   const renderField = (prop: ReturnType<typeof getActivity>['properties'][0]) => {
     if (!prop) return null;
+    if (prop.type === 'variable') {
+      return (
+        <div className="pgrid-input-row">
+          <input
+            type="text"
+            className="pgrid-input pgrid-input--variable"
+            value={String(props[prop.name] ?? prop.defaultValue ?? '')}
+            onChange={(e) => handleChange(prop.name, e.target.value)}
+            placeholder={prop.description ?? 'Variable name'}
+            list={`var-list-${prop.name}`}
+          />
+          <datalist id={`var-list-${prop.name}`}>
+            {variables.map((v) => <option key={v.id} value={v.name} />)}
+          </datalist>
+        </div>
+      );
+    }
     if (prop.type === 'boolean') {
       return (
         <input
@@ -96,30 +114,48 @@ function PropertiesContent() {
         </select>
       );
     }
+    if (prop.type === 'code') {
+      return (
+        <ExpressionInput
+          value={String(props[prop.name] ?? prop.defaultValue ?? '')}
+          onChange={(value) => handleChange(prop.name, value)}
+          placeholder={prop.description}
+          variables={variables}
+          multiline
+        />
+      );
+    }
     const isSelectorField = ['selector', 'source', 'target'].includes(prop.name) ||
       prop.label.toLowerCase().includes('selector');
     if (isSelectorField) {
       return (
         <div className="pgrid-input-row">
-          <input
-            type="text"
-            className="pgrid-input"
+          <ExpressionInput
             value={String(props[prop.name] ?? prop.defaultValue ?? '')}
-            onChange={(e) => handleChange(prop.name, e.target.value)}
+            onChange={(value) => handleChange(prop.name, value)}
             placeholder={prop.description ?? ''}
+            variables={variables}
           />
           <button className="pgrid-pick-btn" onClick={() => setRecorderFor(prop.name)} title="Pick element">🎯</button>
         </div>
       );
     }
+    if (prop.type === 'expression' || prop.type === 'string') {
+      return (
+        <ExpressionInput
+          value={String(props[prop.name] ?? prop.defaultValue ?? '')}
+          onChange={(value) => handleChange(prop.name, value)}
+          placeholder={prop.description ?? ''}
+          variables={variables}
+        />
+      );
+    }
     return (
       <input
-        type={prop.type === 'number' ? 'number' : 'text'}
+        type="number"
         className="pgrid-input"
-        value={prop.type === 'number'
-          ? Number(props[prop.name] ?? prop.defaultValue ?? 0)
-          : String(props[prop.name] ?? prop.defaultValue ?? '')}
-        onChange={(e) => handleChange(prop.name, prop.type === 'number' ? Number(e.target.value) : e.target.value)}
+        value={Number(props[prop.name] ?? prop.defaultValue ?? 0)}
+        onChange={(e) => handleChange(prop.name, Number(e.target.value))}
         placeholder={prop.description ?? ''}
       />
     );
@@ -144,11 +180,10 @@ function PropertiesContent() {
                     <div key="displayName" className="pgrid-row">
                       <div className="pgrid-row__label">Display name</div>
                       <div className="pgrid-row__value">
-                        <input
-                          type="text"
-                          className="pgrid-input"
+                        <ExpressionInput
                           value={String(props['displayName'] ?? selectedNode.data.label ?? '')}
-                          onChange={(e) => handleChange('displayName', e.target.value)}
+                          onChange={(value) => handleChange('displayName', value)}
+                          variables={variables}
                         />
                       </div>
                     </div>

@@ -124,6 +124,7 @@ body,
 .app__workspace {
   display: flex;
   flex: 1;
+  position: relative;
   overflow: hidden;
   min-height: 0;
 }

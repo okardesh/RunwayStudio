@@ -125,4 +125,22 @@ export const systemActivities: ActivityDefinition[] = [
       },
     ],
   },
+  {
+    id: 'run-script',
+    name: 'Run Script',
+    category: 'system',
+    icon: '⌨',
+    description: 'Runs a Python, VB.NET, or C# script with workflow variables available as inputs',
+    color: '#4A90D9',
+    nodeType: 'activity',
+    properties: [
+      { name: 'displayName', label: 'Display name', type: 'string', defaultValue: 'Run Script' },
+      { name: 'language', label: 'Language', type: 'select', defaultValue: 'Python', options: [
+        { label: 'Python', value: 'Python' },
+        { label: 'VB.NET', value: 'VB.NET' },
+        { label: 'C#', value: 'C#' },
+      ] },
+      { name: 'code', label: 'Script', type: 'code', defaultValue: '', required: true, description: 'Type {{ to insert a workflow variable or its members' },
+    ],
+  },
 ];

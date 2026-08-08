@@ -11,7 +11,7 @@ interface ToolbarProps {
 
 export function Toolbar({ activeTab }: ToolbarProps) {
   const { projectName, status, setProjectName, clearWorkflow, nodes } = useWorkflowStore();
-  const { toggleOutputPanel, showOutputPanel, toggleRecorder } = useUiStore();
+  const { activeBottomPanelTab, setActiveBottomPanelTab, toggleRecorder } = useUiStore();
   const [editingName, setEditingName] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -22,11 +22,14 @@ export function Toolbar({ activeTab }: ToolbarProps) {
 
   const startRun = useCallback(async (debug: boolean) => {
     const store = useWorkflowStore.getState();
-    if (!useUiStore.getState().showOutputPanel) useUiStore.getState().toggleOutputPanel();
+    const uiStore = useUiStore.getState();
+    uiStore.clearOutput();
+    uiStore.setActiveBottomPanelTab('output');
     store.setStatus('running');
     const result = await executeWorkflow(
       store.nodes,
       store.edges,
+      store.variables,
       (id) => useWorkflowStore.getState().setExecutingNodeId(id),
       (_id) => {},
       (text, level) => useUiStore.getState().addOutputMessage({ text, level }),
@@ -263,9 +266,9 @@ export function Toolbar({ activeTab }: ToolbarProps) {
       <div className="ribbon__group">
         <div className="ribbon__btns">
           <button
-            className={`rbn-btn${showOutputPanel ? ' active' : ''}`}
-            onClick={toggleOutputPanel}
-            title="Toggle Output Panel"
+            className={`rbn-btn${activeBottomPanelTab === 'output' ? ' active' : ''}`}
+            onClick={() => setActiveBottomPanelTab('output')}
+            title="Show Output"
           >
             <span className="rbn-btn__icon rbn-btn__icon--lg">📋</span>
             <span className="rbn-btn__label">Output</span>

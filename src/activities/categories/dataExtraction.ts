@@ -6,13 +6,15 @@ export const dataExtractionActivities: ActivityDefinition[] = [
     name: 'Get Text',
     category: 'dataExtraction',
     icon: '📖',
-    description: 'Reads the visible text content of an element',
+    description: 'Reads the visible text content of an element and saves it to a variable',
     color: '#00838F',
     nodeType: 'activity',
     properties: [
-      { name: 'selector', label: 'Selector', type: 'string', defaultValue: '', required: true },
-      { name: 'output', label: 'Output Variable', type: 'variable', defaultValue: 'text', required: true },
+      { name: 'displayName', label: 'Display name', type: 'string', defaultValue: 'Get Text' },
+      { name: 'selector', label: 'Selector', type: 'string', defaultValue: '', required: true, description: 'CSS selector or XPath of the target element' },
+      { name: 'output', label: 'Output Variable', type: 'variable', defaultValue: 'textResult', required: true, description: 'Variable to store the extracted text' },
       { name: 'trim', label: 'Trim Whitespace', type: 'boolean', defaultValue: true },
+      { name: 'timeout', label: 'Timeout (ms)', type: 'number', defaultValue: 30000 },
     ],
   },
   {

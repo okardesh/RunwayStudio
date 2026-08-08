@@ -7,16 +7,20 @@ export interface OutputMessage {
   timestamp: string;
 }
 
+export type BottomPanelTab = 'dataManager' | 'output' | 'markers' | 'errors';
+
 interface UiState {
   activitySearchQuery: string;
   expandedCategories: string[];
   showOutputPanel: boolean;
+  activeBottomPanelTab: BottomPanelTab;
   recorderOpen: boolean;
   outputMessages: OutputMessage[];
 
   setActivitySearchQuery: (query: string) => void;
   toggleCategory: (categoryId: string) => void;
   toggleOutputPanel: () => void;
+  setActiveBottomPanelTab: (tab: BottomPanelTab) => void;
   toggleRecorder: () => void;
   addOutputMessage: (message: Omit<OutputMessage, 'id' | 'timestamp'>) => void;
   clearOutput: () => void;
@@ -26,6 +30,7 @@ export const useUiStore = create<UiState>((set) => ({
   activitySearchQuery: '',
   expandedCategories: ['browser', 'uiAutomation', 'dataExtraction'],
   showOutputPanel: false,
+  activeBottomPanelTab: 'dataManager',
   recorderOpen: false,
   outputMessages: [],
 
@@ -39,6 +44,8 @@ export const useUiStore = create<UiState>((set) => ({
     })),
 
   toggleOutputPanel: () => set((state) => ({ showOutputPanel: !state.showOutputPanel })),
+
+  setActiveBottomPanelTab: (activeBottomPanelTab) => set({ activeBottomPanelTab }),
 
   toggleRecorder: () => set((state) => ({ recorderOpen: !state.recorderOpen })),
 
