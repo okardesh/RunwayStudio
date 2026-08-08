@@ -62,14 +62,8 @@ export const controlFlowActivities: ActivityDefinition[] = [
     description: 'Iterates over each item in a collection',
     color: '#6A1B9A',
     nodeType: 'loop',
+    isContainer: true,
     properties: [
-      {
-        name: 'item',
-        label: 'Item Variable',
-        type: 'variable',
-        defaultValue: 'item',
-        required: true,
-      },
       {
         name: 'collection',
         label: 'Collection',
@@ -103,6 +97,16 @@ export const controlFlowActivities: ActivityDefinition[] = [
     category: 'controlFlow',
     icon: '⏹',
     description: 'Breaks out of the current loop',
+    color: '#6A1B9A',
+    nodeType: 'activity',
+    properties: [],
+  },
+  {
+    id: 'continue',
+    name: 'Continue',
+    category: 'controlFlow',
+    icon: '⏭',
+    description: 'Skips to the next iteration of the current loop',
     color: '#6A1B9A',
     nodeType: 'activity',
     properties: [],

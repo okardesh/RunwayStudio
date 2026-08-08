@@ -44,6 +44,7 @@ export interface WorkflowNodeData {
   branches?: WorkflowBranch[]; // ordered branch containers for an If activity
   breakpoint?: boolean;  // pauses debug execution before this activity runs
   collapsed?: boolean;   // folds the activity or block in the workflow designer
+  loopVariable?: { name: string; type: string }; // local For Each item, scoped to its loop only
 }
 
 export interface WorkflowBranch {

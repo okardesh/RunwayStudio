@@ -10,7 +10,7 @@ import './PropertiesPanel.css';
 // ── Properties Content (UiPath property grid style) ──────────────────────────
 
 function PropertiesContent() {
-  const { selectedNodeId, nodes, updateNodeProperties, variables } = useWorkflowStore();
+  const { selectedNodeId, nodes, updateNodeProperties, configureForEach, renameForEachVariable, variables } = useWorkflowStore();
   const [recorderFor, setRecorderFor] = useState<string | null>(null);
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
 
@@ -40,6 +40,23 @@ function PropertiesContent() {
   };
   const { targetType: ancestorTargetType, windowTitle: ancestorWindowTitle } = findAncestorTarget(selectedNode.id);
 
+  const scopedVariables = (() => {
+    let current: typeof selectedNode | undefined = selectedNode;
+    while (current) {
+      if (current.data.activityId === 'for-each' && current.data.loopVariable) {
+        return [...variables, {
+          id: `loop-${current.id}`,
+          name: current.data.loopVariable.name,
+          type: current.data.loopVariable.type,
+          defaultValue: '',
+          scope: current.data.label,
+        }];
+      }
+      current = current.data.parentId ? nodes.find((node) => node.id === current?.data.parentId) : undefined;
+    }
+    return variables;
+  })();
+
   const activity = getActivity(selectedNode.data.activityId);
   const typeName = activity
     ? `UiPath.UIAutomationNext.Activities.N${selectedNode.data.activityId.replace(/-/g, '_').replace(/\b\w/g, (c) => c.toUpperCase()).replace(/_/g, '')}`
@@ -53,10 +70,15 @@ function PropertiesContent() {
 
   // Group properties by section for container activities
   const isContainer = selectedNode.data.isContainer;
+  const isForEach = selectedNode.data.activityId === 'for-each';
   const targetType = (selectedNode.data.properties?.targetType as string) || 'browser';
   const isBrowserTarget = targetType === 'browser';
   
-  const sectionMap: Record<string, string[]> = isContainer ? {
+  const sectionMap: Record<string, string[]> = isForEach ? {
+    'Common': ['displayName'],
+    'For Each': ['collection', 'loopVariable'],
+    'Misc': ['private'],
+  } : isContainer ? {
     'Common': ['displayName'],
     ...(isBrowserTarget ? {
       'Input': ['url'],
@@ -86,7 +108,7 @@ function PropertiesContent() {
             list={`var-list-${prop.name}`}
           />
           <datalist id={`var-list-${prop.name}`}>
-            {variables.map((v) => <option key={v.id} value={v.name} />)}
+            {scopedVariables.map((v) => <option key={v.id} value={v.name} />)}
           </datalist>
         </div>
       );
@@ -120,7 +142,7 @@ function PropertiesContent() {
           value={String(props[prop.name] ?? prop.defaultValue ?? '')}
           onChange={(value) => handleChange(prop.name, value)}
           placeholder={prop.description}
-          variables={variables}
+          variables={scopedVariables}
           multiline
         />
       );
@@ -134,7 +156,7 @@ function PropertiesContent() {
             value={String(props[prop.name] ?? prop.defaultValue ?? '')}
             onChange={(value) => handleChange(prop.name, value)}
             placeholder={prop.description ?? ''}
-            variables={variables}
+            variables={scopedVariables}
           />
           <button className="pgrid-pick-btn" onClick={() => setRecorderFor(prop.name)} title="Pick element">🎯</button>
         </div>
@@ -146,7 +168,7 @@ function PropertiesContent() {
           value={String(props[prop.name] ?? prop.defaultValue ?? '')}
           onChange={(value) => handleChange(prop.name, value)}
           placeholder={prop.description ?? ''}
-          variables={variables}
+          variables={scopedVariables}
         />
       );
     }
@@ -183,7 +205,7 @@ function PropertiesContent() {
                         <ExpressionInput
                           value={String(props['displayName'] ?? selectedNode.data.label ?? '')}
                           onChange={(value) => handleChange('displayName', value)}
-                          variables={variables}
+                          variables={scopedVariables}
                         />
                       </div>
                     </div>
@@ -204,7 +226,45 @@ function PropertiesContent() {
                     </div>
                   );
                 }
+                if (propName === 'loopVariable') {
+                  const loopVariable = selectedNode.data.loopVariable;
+                  return (
+                    <div key="loopVariable" className="pgrid-row">
+                      <div className="pgrid-row__label">Loop variable</div>
+                      <div className="pgrid-row__value pgrid-input-row">
+                        <input
+                          className="pgrid-input"
+                          value={loopVariable?.name ?? ''}
+                          disabled={!loopVariable}
+                          placeholder="Select a collection first"
+                          onChange={(event) => renameForEachVariable(selectedNode.id, event.target.value)}
+                        />
+                        {loopVariable && <span className="pgrid-type-hint">{loopVariable.type}</span>}
+                      </div>
+                    </div>
+                  );
+                }
                 if (!propDef) return null;
+                if (isForEach && propName === 'collection') {
+                  const collectionVariables = variables.filter((variable) =>
+                    /^(?:List|IEnumerable|ICollection|IList|Array)<.+>$/.test(variable.type) || /\[\]$/.test(variable.type) || variable.type === 'Array'
+                  );
+                  return (
+                    <div key="collection" className="pgrid-row">
+                      <div className="pgrid-row__label">Collection<span className="pgrid-required"> *</span></div>
+                      <div className="pgrid-row__value">
+                        <select
+                          className="pgrid-input"
+                          value={String(props.collection ?? '')}
+                          onChange={(event) => configureForEach(selectedNode.id, event.target.value)}
+                        >
+                          <option value="">Select a collection</option>
+                          {collectionVariables.map((variable) => <option key={variable.id} value={`{{${variable.name}}}`}>{variable.name} ({variable.type})</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  );
+                }
                 return (
                   <div key={propName} className="pgrid-row">
                     <div className="pgrid-row__label">

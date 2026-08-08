@@ -86,6 +86,19 @@
 .try-catch-card__add-catch { width: calc(100% - 16px); margin: 0 8px 8px; padding: 5px; border: 1px dashed #B75B5B; background: #FFF6F6; color: #8B2424; font: 11px inherit; cursor: pointer; }
 .try-catch-card__add-catch:hover { background: #F9E4E4; }
 
+.for-each-card { overflow: hidden; border: 1px solid #9D70B4; border-radius: 4px; background: #FEFCFF; }
+.for-each-card--selected { box-shadow: 0 0 0 2px rgba(106, 27, 154, 0.2); }
+.for-each-card--executing { border-color: #107C10; box-shadow: 0 0 0 2px rgba(16, 124, 16, 0.2); }
+.for-each-card__hdr { display: flex; align-items: center; gap: 7px; padding: 7px 9px; background: #F0E7F5; border-bottom: 1px solid #D8C7E2; color: #54206F; }
+.for-each-card__icon { width: 18px; text-align: center; font-size: 14px; }
+.for-each-card__title { flex: 1; font-size: 12px; font-weight: 700; }
+.for-each-card__delete { border: 0; background: transparent; color: #744B89; cursor: pointer; font-size: 16px; }
+.for-each-card__context { display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 5px 8px; border-bottom: 1px solid #E9E0EE; background: #FAF7FC; color: #666; font: 11px Consolas, 'Courier New', monospace; }
+.for-each-card__variable { color: #54206F; font-weight: 700; }
+.for-each-card__type { color: #0078D4; }
+.for-each-card__body { min-height: 52px; padding: 6px; display: grid; gap: 4px; }
+.for-each-card__empty { padding: 7px; color: #999; font-size: 11px; font-style: italic; text-align: center; }
+
 /* Breakpoint gutter dot — always visible as a faint ring; filled red when set */
 .seq-card__bp {
   flex-shrink: 0;

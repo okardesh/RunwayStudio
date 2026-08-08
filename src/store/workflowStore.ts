@@ -17,6 +17,16 @@ import { getActivity } from '../activities/registry';
 
 const createInitialNodes = (): Node<WorkflowNodeData>[] => [];
 
+const isCollectionType = (type: string) =>
+  /^(?:List|IEnumerable|ICollection|IList|Array)<.+>$/.test(type) || /\[\]$/.test(type) || type === 'Array';
+
+const getCollectionElementType = (type: string) => {
+  const generic = type.match(/^(?:List|IEnumerable|ICollection|IList|Array)<(.+)>$/);
+  if (generic) return generic[1].trim();
+  if (type.endsWith('[]')) return type.slice(0, -2).trim();
+  return 'Object';
+};
+
 interface WorkflowState {
   nodes: Node<WorkflowNodeData>[];
   edges: Edge[];
@@ -46,6 +56,8 @@ interface WorkflowState {
   moveChildNode: (parentId: string, from: number, to: number) => void;
   deleteNode: (nodeId: string) => void;
   updateNodeProperties: (nodeId: string, properties: Record<string, unknown>) => void;
+  configureForEach: (nodeId: string, collection: string) => void;
+  renameForEachVariable: (nodeId: string, name: string) => void;
   toggleBreakpoint: (nodeId: string) => void;
   toggleNodeCollapsed: (nodeId: string) => void;
   setAllNodesCollapsed: (collapsed: boolean) => void;
@@ -424,6 +436,39 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
       ),
       isDirty: true,
     })),
+
+  configureForEach: (nodeId, collection) =>
+    set((state) => {
+      const collectionName = collection.replace(/^\{\{\s*|\s*\}\}$/g, '');
+      const source = state.variables.find((variable) => variable.name === collectionName);
+      if (!source || !isCollectionType(source.type)) return state;
+      const elementType = getCollectionElementType(source.type);
+      return {
+        nodes: state.nodes.map((node) => node.id === nodeId
+          ? {
+            ...node,
+            data: {
+              ...node.data,
+              properties: { ...node.data.properties, collection: `{{${source.name}}}` },
+              loopVariable: { name: node.data.loopVariable?.name || 'Item', type: elementType },
+            },
+          }
+          : node),
+        isDirty: true,
+      };
+    }),
+
+  renameForEachVariable: (nodeId, name) =>
+    set((state) => {
+      const normalized = name.trim();
+      if (!normalized) return state;
+      return {
+        nodes: state.nodes.map((node) => node.id === nodeId && node.data.loopVariable
+          ? { ...node, data: { ...node.data, loopVariable: { ...node.data.loopVariable, name: normalized } } }
+          : node),
+        isDirty: true,
+      };
+    }),
 
   toggleBreakpoint: (nodeId) =>
     set((state) => ({

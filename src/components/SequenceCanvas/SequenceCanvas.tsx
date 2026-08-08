@@ -199,6 +199,57 @@ function ContainerCard({
   );
 }
 
+function ForEachCard({ node, isSelected, isExecuting, onSelect, onDelete }: {
+  node: Node<WorkflowNodeData>;
+  isSelected: boolean;
+  isExecuting: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+}) {
+  const { nodes, addChildNodeAt, deleteNode, selectedNodeId, setSelectedNode, toggleNodeCollapsed } = useWorkflowStore();
+  const isCollapsed = !!node.data.collapsed;
+  const childIds = node.data.childIds ?? [];
+  const children = childIds.map((id) => nodes.find((item) => item.id === id)).filter(Boolean) as Node<WorkflowNodeData>[];
+  const collection = String(node.data.properties.collection ?? '');
+  const loopVariable = node.data.loopVariable;
+
+  return (
+    <div className={`for-each-card${isSelected ? ' for-each-card--selected' : ''}${isExecuting ? ' for-each-card--executing' : ''}`} onClick={(event) => { event.stopPropagation(); onSelect(); }}>
+      <div className="for-each-card__hdr">
+        <span className="for-each-card__icon">{node.data.icon}</span>
+        <span className="for-each-card__title">{node.data.label}</span>
+        <button className="seq-card__collapse" onClick={(event) => { event.stopPropagation(); toggleNodeCollapsed(node.id); }} title={isCollapsed ? 'Expand block' : 'Collapse block'}>{isCollapsed ? '▸' : '▾'}</button>
+        <button className="for-each-card__delete" onClick={(event) => { event.stopPropagation(); onDelete(); }} title="Remove For Each">×</button>
+      </div>
+      {!isCollapsed && <>
+        <div className="for-each-card__context">
+          {loopVariable && collection
+            ? <><span className="for-each-card__variable">{loopVariable.name}</span><span className="for-each-card__type">{loopVariable.type}</span><span>in {collection}</span></>
+            : 'Select a collection in Properties to create the loop variable'}
+        </div>
+        <div
+          className="for-each-card__body"
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const activityId = event.dataTransfer.getData('application/rpa-activity');
+            if (activityId) addChildNodeAt(node.id, activityId, children.length);
+          }}
+        >
+          {children.length === 0 ? <div className="for-each-card__empty">Drop activity here</div> : children.map((child) => (
+            <div key={child.id} className={`seq-card${selectedNodeId === child.id ? ' seq-card--selected' : ''}`} style={{ borderLeftColor: child.data.color ?? '#6A1B9A' }} onClick={(event) => { event.stopPropagation(); setSelectedNode(child.id); }}>
+              <div className="seq-card__icon" style={{ background: child.data.color ?? '#0078D4' }}>{child.data.icon}</div>
+              <div className="seq-card__body"><span className="seq-card__name">{child.data.label}</span></div>
+              <button className="seq-card__delete" onClick={(event) => { event.stopPropagation(); deleteNode(child.id); }} title="Remove">×</button>
+            </div>
+          ))}
+        </div>
+      </>}
+    </div>
+  );
+}
+
 function IfCard({ node, isSelected, isExecuting, onSelect, onDelete }: {
   node: Node<WorkflowNodeData>;
   isSelected: boolean;
@@ -301,8 +352,7 @@ function TryCatchCard({ node, isSelected, isExecuting, onSelect, onDelete }: {
         <div className="try-catch-card__branches">
           {branches.map((branch, index) => {
             const children = branch.childIds.map((id) => nodes.find((item) => item.id === id)).filter(Boolean) as Node<WorkflowNodeData>[];
-            const catchNumber = branches.slice(0, index + 1).filter((item) => item.kind === 'catch').length;
-            const branchLabel = branch.kind === 'try' ? 'TRY' : branch.kind === 'catch' ? `CATCH ${catchNumber}` : 'FINALLY';
+            const branchLabel = branch.kind === 'try' ? 'TRY' : branch.kind === 'catch' ? 'CATCH' : 'FINALLY';
             return (
               <section
                 key={branch.id}
@@ -489,6 +539,15 @@ export function SequenceCanvas() {
                 const isSelected = node.id === selectedNodeId;
                 const isDragging = draggingIdx === idx;
                 const isCollapsed = !!node.data.collapsed;
+
+                if (node.data.activityId === 'for-each') {
+                  return (
+                    <div key={node.id} className="seq-item" style={{ opacity: isDragging ? 0.35 : 1 }}>
+                      <ForEachCard node={node} isSelected={isSelected} isExecuting={isExecuting} onSelect={() => setSelectedNode(node.id)} onDelete={() => deleteNode(node.id)} />
+                      <InsertZone index={idx + 1} active={dropIndex === idx + 1} visible={canvasDragActive} onDragOver={() => setDropIndex(idx + 1)} onDrop={handleZoneDrop} />
+                    </div>
+                  );
+                }
 
                 if (node.data.activityId === 'if') {
                   return (

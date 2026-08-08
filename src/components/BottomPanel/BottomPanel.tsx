@@ -10,6 +10,7 @@ const VAR_TYPES = [
   'String', 'Boolean', 'Char', 'Byte', 'SByte', 'Int16', 'Int32', 'Int64',
   'UInt16', 'UInt32', 'UInt64', 'Single', 'Double', 'Decimal', 'DateTime',
   'TimeSpan', 'Guid', 'Object', 'Array', 'List', 'Dictionary', 'DataTable',
+  'List<String>', 'List<Int32>', 'List<Boolean>', 'List<Object>', 'String[]', 'Int32[]', 'Object[]',
 ];
 
 const LEVEL_COLORS: Record<string, string> = {

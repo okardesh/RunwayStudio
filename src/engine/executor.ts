@@ -123,6 +123,20 @@ function evaluateCondition(expression: string, values: Record<string, unknown>):
   }
 }
 
+function resolveCollection(expression: unknown, values: Record<string, unknown>): unknown[] | null {
+  const reference = String(expression ?? '').trim().match(/^\{\{\s*([A-Za-z_]\w*)\s*\}\}$/);
+  const raw = reference ? values[reference[1]] : expression;
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw !== 'string') return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed;
+  } catch {
+    // A comma-separated fallback makes simple preview values usable without JSON syntax.
+  }
+  return raw.trim() ? raw.split(',').map((item) => item.trim()) : [];
+}
+
 export interface DebugOptions {
   debug?: boolean;
   hasBreakpoint?: (nodeId: string) => boolean;
@@ -140,7 +154,7 @@ export async function executeWorkflow(
   debugOptions?: DebugOptions
 ): Promise<'completed' | 'stopped' | 'error'> {
   _stopRequested = false;
-  const values = Object.fromEntries(variables.map((variable) => [variable.name, variable.defaultValue]));
+  const values: Record<string, unknown> = Object.fromEntries(variables.map((variable) => [variable.name, variable.defaultValue]));
   const runWithValues = async (activityId: string, properties: Record<string, unknown>) => {
     const result = await runActivity(activityId, resolveProperties(properties, values), onLog);
     if (result.outputs) Object.assign(values, result.outputs);
@@ -188,6 +202,70 @@ export async function executeWorkflow(
     onLog(`→ ${node.data.label}`, 'Info');
 
     if (node.data.isContainer) {
+      if (node.data.activityId === 'for-each') {
+        const loopVariable = node.data.loopVariable;
+        const items = resolveCollection(node.data.properties.collection, values);
+        if (!loopVariable || !items) {
+          onNodeEnd(node.id);
+          onLog('✗  For Each requires a selected collection', 'Error');
+          return 'error';
+        }
+        const children = (node.data.childIds ?? []).map((id) => nodes.find((item) => item.id === id)).filter(Boolean) as Node<WorkflowNodeData>[];
+        const previousValue = values[loopVariable.name];
+        const hadPreviousValue = loopVariable.name in values;
+        onLog(`  Iterating ${items.length} item${items.length === 1 ? '' : 's'} as ${loopVariable.name}`, 'Info');
+
+        let shouldBreakLoop = false;
+        for (const item of items) {
+          values[loopVariable.name] = item;
+          for (const child of children) {
+            if (_stopRequested) {
+              if (hadPreviousValue) values[loopVariable.name] = previousValue;
+              else delete values[loopVariable.name];
+              onNodeEnd(node.id);
+              onLog('Stopped by user', 'Warning');
+              return 'stopped';
+            }
+            onNodeStart(child.id);
+            await maybeBreak(child.id, 1);
+            if (_stopRequested) {
+              onNodeEnd(child.id);
+              if (hadPreviousValue) values[loopVariable.name] = previousValue;
+              else delete values[loopVariable.name];
+              onNodeEnd(node.id);
+              onLog('Stopped by user', 'Warning');
+              return 'stopped';
+            }
+            onLog(`  → ${child.data.label}`, 'Info');
+            if (child.data.activityId === 'break') {
+              onNodeEnd(child.id);
+              onLog('  Break: exiting For Each', 'Info');
+              shouldBreakLoop = true;
+              break;
+            }
+            if (child.data.activityId === 'continue') {
+              onNodeEnd(child.id);
+              onLog('  Continue: next For Each item', 'Info');
+              break;
+            }
+            const childOk = await runWithValues(child.data.activityId, child.data.properties);
+            onNodeEnd(child.id);
+            if (!childOk) {
+              if (hadPreviousValue) values[loopVariable.name] = previousValue;
+              else delete values[loopVariable.name];
+              onNodeEnd(node.id);
+              onLog(`✗  "${child.data.label}" failed`, 'Error');
+              return 'error';
+            }
+          }
+          if (shouldBreakLoop) break;
+        }
+        if (hadPreviousValue) values[loopVariable.name] = previousValue;
+        else delete values[loopVariable.name];
+        onNodeEnd(node.id);
+        continue;
+      }
+
       if (node.data.activityId === 'if') {
         const branches = node.data.branches ?? [];
         let selectedBranch = undefined;

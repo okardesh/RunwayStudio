@@ -160,6 +160,7 @@
   width: 100%;
 }
 .pgrid-input-row .pgrid-input { flex: 1; min-width: 0; }
+.pgrid-type-hint { flex: 0 0 auto; padding: 3px 5px; border: 1px solid #D0D0D0; background: #F3F3F3; color: #555; font: 10px Consolas, 'Courier New', monospace; }
 
 .expression-input {
   position: relative;
