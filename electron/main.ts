@@ -3,6 +3,7 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import fs from 'node:fs'
+import { execFile } from 'node:child_process'
 import { executeActivity } from './automation/index.js'
 import { pickDesktopElement } from './automation/picker.js'
 
@@ -122,6 +123,27 @@ app.whenReady().then(() => {
     const content = fs.readFileSync(filePath, { encoding: 'utf8' });
     return { path: filePath, content };
   });
+
+  // Populate the type browser from the installed .NET runtime. The renderer
+  // still has a built-in catalog for browser-preview mode and query failures.
+  ipcMain.handle('get-dotnet-types', () => new Promise<string[]>((resolve) => {
+    const script = [
+      "$root = Join-Path $env:ProgramFiles 'dotnet\\shared\\Microsoft.NETCore.App'",
+      "$runtime = Get-ChildItem $root -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1",
+      "if (-not $runtime) { '[]'; exit }",
+      "$types = foreach ($dll in Get-ChildItem $runtime.FullName -Filter *.dll) { try { [Reflection.Assembly]::LoadFrom($dll.FullName).GetExportedTypes() | ForEach-Object { $_.FullName } } catch {} }",
+      "$types | Where-Object { $_ } | Sort-Object -Unique | ConvertTo-Json -Compress",
+    ].join('; ');
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { maxBuffer: 16 * 1024 * 1024 }, (error, stdout) => {
+      if (error || !stdout.trim()) { resolve([]); return; }
+      try {
+        const parsed = JSON.parse(stdout) as string | string[];
+        resolve(Array.isArray(parsed) ? parsed : [parsed]);
+      } catch {
+        resolve([]);
+      }
+    });
+  }));
 
   createWindow();
 })

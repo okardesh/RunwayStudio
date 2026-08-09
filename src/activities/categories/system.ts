@@ -126,6 +126,18 @@ export const systemActivities: ActivityDefinition[] = [
     ],
   },
   {
+    id: 'throw',
+    name: 'Throw',
+    category: 'system',
+    icon: '⚠',
+    description: 'Stops the current activity path with an error message',
+    color: '#C50F1F',
+    nodeType: 'activity',
+    properties: [
+      { name: 'message', label: 'Exception Message', type: 'expression', defaultValue: 'Workflow error', required: true },
+    ],
+  },
+  {
     id: 'run-script',
     name: 'Run Script',
     category: 'system',

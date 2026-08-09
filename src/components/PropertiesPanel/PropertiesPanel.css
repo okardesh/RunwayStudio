@@ -262,6 +262,19 @@
 .expression-editor__footer button { min-width: 76px; padding: 6px 14px; border: 1px solid #9C9C9C; background: #FFF; color: #333; cursor: pointer; }
 .expression-editor__footer .expression-editor__save { border-color: #0078D4; background: #0078D4; color: #FFF; }
 
+.expression-create__overlay { position: fixed; z-index: 1001; inset: 0; display: grid; place-items: center; background: rgba(0, 0, 0, 0.3); }
+.expression-create { width: min(360px, calc(100vw - 32px)); border: 1px solid #7A7A7A; background: #FFF; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25); }
+.expression-create header, .expression-create footer { display: flex; align-items: center; padding: 10px 12px; border-bottom: 1px solid #DDD; }
+.expression-create header strong { flex: 1; color: #333; font-size: 13px; }
+.expression-create header button { border: 0; background: transparent; color: #666; font-size: 20px; cursor: pointer; }
+.expression-create label { display: grid; gap: 4px; padding: 8px 12px 0; color: #555; font-size: 11px; font-weight: 600; }
+.expression-create input, .expression-create select { width: 100%; box-sizing: border-box; padding: 5px 7px; border: 1px solid #AAA; color: #333; font: 12px inherit; }
+.expression-create input:focus, .expression-create select:focus { border-color: #0078D4; outline: none; box-shadow: 0 0 0 1px #0078D4; }
+.expression-create__error { margin: 8px 12px 0; color: #C50F1F; font-size: 11px; }
+.expression-create footer { justify-content: flex-end; gap: 8px; margin-top: 12px; border-top: 1px solid #DDD; border-bottom: 0; }
+.expression-create footer button { padding: 5px 12px; border: 1px solid #AAA; background: #FFF; color: #333; font: 11px inherit; cursor: pointer; }
+.expression-create footer .expression-create__confirm { border-color: #0078D4; background: #0078D4; color: #FFF; }
+
 .pgrid-pick-btn {
   background: transparent;
   border: 1px solid #D0D0D0;

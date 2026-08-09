@@ -30,7 +30,7 @@ interface UiState {
 
 export const useUiStore = create<UiState>((set) => ({
   activitySearchQuery: '',
-  expandedCategories: ['browser', 'uiAutomation', 'dataExtraction'],
+  expandedCategories: [],
   showOutputPanel: false,
   activeBottomPanelTab: 'dataManager',
   recorderOpen: false,

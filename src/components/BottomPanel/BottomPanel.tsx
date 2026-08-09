@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useWorkflowStore } from '../../store/workflowStore';
 import { useUiStore, type BottomPanelTab } from '../../store/uiStore';
 import type { WorkflowVariable } from '../../types';
@@ -6,11 +6,19 @@ import './BottomPanel.css';
 
 type SubTab = 'variables' | 'arguments' | 'namespaces' | 'connections';
 
-const VAR_TYPES = [
-  'String', 'Boolean', 'Char', 'Byte', 'SByte', 'Int16', 'Int32', 'Int64',
-  'UInt16', 'UInt32', 'UInt64', 'Single', 'Double', 'Decimal', 'DateTime',
-  'TimeSpan', 'Guid', 'Object', 'Array', 'List', 'Dictionary', 'DataTable',
-  'List<String>', 'List<Int32>', 'List<Boolean>', 'List<Object>', 'String[]', 'Int32[]', 'Object[]',
+const PRIMARY_TYPES = ['String', 'Boolean', 'Int32', 'Double', 'DateTime', 'Object', 'List'];
+
+const DOTNET_TYPES = [
+  'String', 'Boolean', 'Char', 'Byte', 'SByte', 'Int16', 'Int32', 'Int64', 'UInt16', 'UInt32', 'UInt64',
+  'Single', 'Double', 'Decimal', 'DateTime', 'DateOnly', 'TimeOnly', 'TimeSpan', 'Guid', 'Object', 'Enum',
+  'Array', 'List', 'Dictionary', 'HashSet', 'Queue', 'Stack', 'IEnumerable', 'ICollection', 'IList',
+  'DataTable', 'DataRow', 'DataSet', 'Uri', 'Version', 'Exception', 'System.IO.FileInfo', 'System.IO.DirectoryInfo',
+  'System.IO.Stream', 'System.IO.MemoryStream', 'System.IO.StreamReader', 'System.IO.StreamWriter',
+  'System.Net.Http.HttpClient', 'System.Net.Http.HttpRequestMessage', 'System.Net.Http.HttpResponseMessage',
+  'System.Xml.XmlDocument', 'System.Xml.Linq.XDocument', 'System.Text.StringBuilder', 'System.Text.RegularExpressions.Regex',
+  'System.Threading.CancellationToken', 'System.Threading.Tasks.Task', 'System.Threading.Tasks.Task<T>',
+  'System.Collections.Generic.KeyValuePair<TKey,TValue>', 'System.Collections.Generic.SortedDictionary<TKey,TValue>',
+  'System.Collections.Generic.ObservableCollection<T>', 'System.Linq.IQueryable<T>',
 ];
 
 const LEVEL_COLORS: Record<string, string> = {
@@ -23,15 +31,35 @@ export function BottomPanel() {
   const { outputMessages, clearOutput, activeBottomPanelTab: mainTab, setActiveBottomPanelTab } = useUiStore();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
+  const [typePickerFor, setTypePickerFor] = useState<WorkflowVariable | 'draft' | null>(null);
+  const [listPickerFor, setListPickerFor] = useState<WorkflowVariable | 'draft' | null>(null);
+  const [typeQuery, setTypeQuery] = useState('');
+  const [customType, setCustomType] = useState('');
+  const [draftName, setDraftName] = useState('');
+  const [draftType, setDraftType] = useState('String');
+  const [draftDefaultValue, setDraftDefaultValue] = useState('');
+  const [availableDotNetTypes, setAvailableDotNetTypes] = useState(DOTNET_TYPES);
   const outputEndRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
     if (mainTab === 'output') outputEndRef.current?.scrollIntoView({ block: 'end' });
   }, [mainTab, outputMessages.length]);
 
-  const handleCreateVar = () => {
-    const name = `variable${variables.length + 1}`;
-    addVariable({ name, type: 'String', defaultValue: '', scope: 'Main' });
+  useEffect(() => {
+    const getDotNetTypes = (window as any).electronAPI?.getDotNetTypes as undefined | (() => Promise<string[]>);
+    if (!getDotNetTypes) return;
+    void getDotNetTypes().then((types) => {
+      if (types.length > 0) setAvailableDotNetTypes([...new Set([...DOTNET_TYPES, ...types])].sort());
+    });
+  }, []);
+
+  const commitDraft = () => {
+    const name = draftName.trim();
+    if (!name || variables.some((variable) => variable.name === name)) return;
+    addVariable({ name, type: draftType, defaultValue: draftDefaultValue, scope: 'Main' });
+    setDraftName('');
+    setDraftType('String');
+    setDraftDefaultValue('');
   };
 
   const startEdit = (v: WorkflowVariable) => {
@@ -43,6 +71,43 @@ export function BottomPanel() {
     if (editName.trim()) updateVariable(v.id, { name: editName.trim() });
     setEditingId(null);
   };
+
+  const assignType = (target: WorkflowVariable | 'draft', type: string) => {
+    if (target === 'draft') setDraftType(type);
+    else updateVariable(target.id, { type });
+  };
+
+  const selectType = (target: WorkflowVariable | 'draft', type: string) => {
+    if (type === 'List') {
+      setListPickerFor(target);
+      setTypePickerFor(null);
+      setTypeQuery('');
+      setCustomType('');
+      return;
+    }
+    assignType(target, type);
+    setTypePickerFor(null);
+    setTypeQuery('');
+  };
+
+  const selectPrimaryType = (target: WorkflowVariable | 'draft', type: string) => {
+    if (type === '__more__') {
+      setCustomType('');
+      setTypePickerFor(target);
+      setTypeQuery('');
+      return;
+    }
+    selectType(target, type);
+  };
+
+  const selectListElementType = (elementType: string) => {
+    if (!listPickerFor) return;
+    assignType(listPickerFor, `List<${elementType}>`);
+    setListPickerFor(null);
+    setTypeQuery('');
+  };
+
+  const filteredDotNetTypes = availableDotNetTypes.filter((type) => type.toLowerCase().includes(typeQuery.toLowerCase()));
 
   const mainTabs = [
     { id: 'dataManager' as BottomPanelTab, label: 'Data Manager' },
@@ -103,6 +168,30 @@ export function BottomPanel() {
               </div>
 
               <div className="bp-vars__body">
+                <div className="bp-vars__row bp-vars__row--draft">
+                  <div className="bp-cell bp-cell--name">
+                    <input
+                      className="bp-cell__input bp-cell__input--draft"
+                      value={draftName}
+                      onChange={(event) => setDraftName(event.target.value)}
+                      onBlur={commitDraft}
+                      onKeyDown={(event) => event.key === 'Enter' && commitDraft()}
+                      placeholder="Create variable"
+                    />
+                  </div>
+                  <div className="bp-cell bp-cell--type">
+                    <select className="bp-cell__select" value={draftType} onChange={(event) => selectPrimaryType('draft', event.target.value)}>
+                      {!PRIMARY_TYPES.includes(draftType) && <option value={draftType}>{draftType}</option>}
+                      {PRIMARY_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+                      <option value="__more__">More...</option>
+                    </select>
+                  </div>
+                  <div className="bp-cell bp-cell--scope">Main</div>
+                  <div className="bp-cell bp-cell--ctrl" />
+                  <div className="bp-cell bp-cell--default">
+                    <input className="bp-cell__input bp-cell__input--draft" value={draftDefaultValue} onChange={(event) => setDraftDefaultValue(event.target.value)} onBlur={commitDraft} placeholder="Default value" />
+                  </div>
+                </div>
                 {variables.map((v: WorkflowVariable) => (
                   <div key={v.id} className="bp-vars__row">
                     <div className="bp-cell bp-cell--name">
@@ -120,12 +209,10 @@ export function BottomPanel() {
                       )}
                     </div>
                     <div className="bp-cell bp-cell--type">
-                      <select
-                        className="bp-cell__select"
-                        value={v.type}
-                        onChange={(e) => updateVariable(v.id, { type: e.target.value })}
-                      >
-                        {VAR_TYPES.map((t) => <option key={t}>{t}</option>)}
+                      <select className="bp-cell__select" value={v.type} onChange={(event) => selectPrimaryType(v, event.target.value)}>
+                        {!PRIMARY_TYPES.includes(v.type) && <option value={v.type}>{v.type}</option>}
+                        {PRIMARY_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+                        <option value="__more__">More...</option>
                       </select>
                     </div>
                     <div className="bp-cell bp-cell--scope">{v.scope || 'Main'}</div>
@@ -145,11 +232,6 @@ export function BottomPanel() {
               </div>
             </div>
 
-            <div className="bp-vars__footer">
-              <button className="bp-create-link" onClick={handleCreateVar}>
-                Create variable
-              </button>
-            </div>
           </div>
         )}
 
@@ -185,6 +267,38 @@ export function BottomPanel() {
           </div>
         )}
       </div>
+
+      {typePickerFor && (
+        <div className="bp-type-modal__backdrop" onMouseDown={() => setTypePickerFor(null)}>
+          <div className="bp-type-modal" role="dialog" aria-modal="true" aria-label="Choose .NET type" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="bp-type-modal__header"><strong>Browse and select a .NET type</strong><button onClick={() => setTypePickerFor(null)} title="Close">×</button></div>
+            <input className="bp-type-modal__search" value={typeQuery} onChange={(event) => setTypeQuery(event.target.value)} placeholder="Search framework types or enter a full type name below" autoFocus />
+            <div className="bp-type-modal__types">
+              {filteredDotNetTypes.map((type) => <button key={type} onClick={() => selectType(typePickerFor, type)}>{type}</button>)}
+            </div>
+            <div className="bp-type-modal__custom">
+              <input value={customType} onChange={(event) => setCustomType(event.target.value)} placeholder="Any fully qualified .NET type" />
+              <button disabled={!customType.trim()} onClick={() => selectType(typePickerFor, customType.trim())}>Use type</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {listPickerFor && (
+        <div className="bp-type-modal__backdrop" onMouseDown={() => setListPickerFor(null)}>
+          <div className="bp-type-modal bp-type-modal--small" role="dialog" aria-modal="true" aria-label="Choose List element type" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="bp-type-modal__header"><strong>List element type</strong><button onClick={() => setListPickerFor(null)} title="Close">×</button></div>
+            <input className="bp-type-modal__search" value={typeQuery} onChange={(event) => setTypeQuery(event.target.value)} placeholder="Search element types" autoFocus />
+            <div className="bp-type-modal__types">
+              {filteredDotNetTypes.filter((type) => !['List', 'Array', 'Dictionary', 'HashSet', 'Queue', 'Stack'].includes(type)).map((type) => <button key={type} onClick={() => selectListElementType(type)}>{type}</button>)}
+            </div>
+            <div className="bp-type-modal__custom">
+              <input value={customType} onChange={(event) => setCustomType(event.target.value)} placeholder="Fully qualified element type" />
+              <button disabled={!customType.trim()} onClick={() => selectListElementType(customType.trim())}>Use type</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

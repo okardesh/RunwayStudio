@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { WorkflowVariable } from '../../types';
+import { useWorkflowStore } from '../../store/workflowStore';
 
 interface Props {
   value: string;
@@ -101,12 +102,59 @@ function AdvancedExpressionEditor({ initialValue, onSave, onClose, variables }: 
   );
 }
 
+function CreateVariableDialog({ variables, onCreate, onClose }: {
+  variables: WorkflowVariable[];
+  onCreate: (name: string) => void;
+  onClose: () => void;
+}) {
+  const { addVariable } = useWorkflowStore();
+  const [name, setName] = useState('');
+  const [type, setType] = useState('String');
+  const [error, setError] = useState('');
+
+  const createVariable = () => {
+    const normalized = name.trim();
+    if (!/^[A-Za-z_]\w*$/.test(normalized)) {
+      setError('Use letters, numbers, and underscores; start with a letter or underscore.');
+      return;
+    }
+    if (variables.some((variable) => variable.name === normalized)) {
+      setError('A variable with this name already exists.');
+      return;
+    }
+    addVariable({ name: normalized, type, defaultValue: '', scope: 'Main' });
+    onCreate(normalized);
+  };
+
+  return createPortal(
+    <div className="expression-create__overlay" onMouseDown={onClose}>
+      <div className="expression-create" role="dialog" aria-modal="true" aria-label="Create workflow variable" onMouseDown={(event) => event.stopPropagation()}>
+        <header><strong>Create variable</strong><button type="button" onClick={onClose} aria-label="Close">×</button></header>
+        <label>Name<input value={name} onChange={(event) => { setName(event.target.value); setError(''); }} onKeyDown={(event) => event.key === 'Enter' && createVariable()} autoFocus placeholder="variableName" /></label>
+        <label>Type<select value={type} onChange={(event) => setType(event.target.value)}>
+          {['String', 'Boolean', 'Int32', 'Double', 'Decimal', 'DateTime', 'Object', 'List<String>'].map((item) => <option key={item} value={item}>{item}</option>)}
+        </select></label>
+        {error && <p className="expression-create__error">{error}</p>}
+        <footer><button type="button" onClick={onClose}>Cancel</button><button type="button" className="expression-create__confirm" onClick={createVariable}>Create</button></footer>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 export function ExpressionInput({ value, onChange, placeholder, variables, multiline = false, onClick }: Props) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [isEditorOpen, setEditorOpen] = useState(false);
+  const [isCreateVariableOpen, setCreateVariableOpen] = useState(false);
   const { match, suggestions } = useMemo(() => getSuggestions(value, variables), [value, variables]);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      event.stopPropagation();
+      setCreateVariableOpen(true);
+      return;
+    }
     if (!suggestions.length) return;
     if (event.key === 'ArrowDown') { event.preventDefault(); setActiveIndex((index) => Math.min(index + 1, suggestions.length - 1)); }
     if (event.key === 'ArrowUp') { event.preventDefault(); setActiveIndex((index) => Math.max(index - 1, 0)); }
@@ -132,6 +180,11 @@ export function ExpressionInput({ value, onChange, placeholder, variables, multi
         {suggestions.map((suggestion, index) => <button key={suggestion} type="button" className={`expression-input__suggestion${index === activeIndex ? ' expression-input__suggestion--active' : ''}`} onMouseDown={(event) => { event.preventDefault(); onChange(applySuggestion(value, suggestion)); }}>{suggestion}</button>)}
       </div>}
       {isEditorOpen && <AdvancedExpressionEditor initialValue={value} onSave={onChange} onClose={() => setEditorOpen(false)} variables={variables} />}
+      {isCreateVariableOpen && <CreateVariableDialog
+        variables={variables}
+        onClose={() => setCreateVariableOpen(false)}
+        onCreate={(name) => { onChange(`${value}{{${name}}}`); setCreateVariableOpen(false); }}
+      />}
     </div>
   );
 }

@@ -43,11 +43,14 @@ function browserFallback(activityId: string, properties: Record<string, unknown>
       const url = String(properties['url'] ?? 'about:blank');
       if (url && url !== 'about:blank') window.open(url, '_blank');
       onLog(`   Opened ${url} in new tab (browser mode)`, 'Info');
-      return true;
+      return { success: true };
     }
+    case 'throw':
+      onLog(`   ${String(properties.message ?? 'Workflow error')}`, 'Error');
+      return { success: false };
     default:
       onLog(`   (simulated) ${activityId}`, 'Debug');
-      return true;
+      return { success: true };
   }
 }
 
@@ -137,6 +140,15 @@ function resolveCollection(expression: unknown, values: Record<string, unknown>)
   return raw.trim() ? raw.split(',').map((item) => item.trim()) : [];
 }
 
+function getCollectionVariableName(value: unknown) {
+  return String(value ?? '').trim().replace(/^\{\{\s*|\s*\}\}$/g, '');
+}
+
+function resolveCollectionValue(value: unknown, values: Record<string, unknown>) {
+  const reference = String(value ?? '').trim().match(/^\{\{\s*([A-Za-z_]\w*)\s*\}\}$/);
+  return reference && reference[1] in values ? values[reference[1]] : value;
+}
+
 export interface DebugOptions {
   debug?: boolean;
   hasBreakpoint?: (nodeId: string) => boolean;
@@ -156,7 +168,41 @@ export async function executeWorkflow(
   _stopRequested = false;
   const values: Record<string, unknown> = Object.fromEntries(variables.map((variable) => [variable.name, variable.defaultValue]));
   const runWithValues = async (activityId: string, properties: Record<string, unknown>) => {
-    const result = await runActivity(activityId, resolveProperties(properties, values), onLog);
+    if (activityId === 'create-list') {
+      const output = getCollectionVariableName(properties.output);
+      if (!output) return false;
+      values[output] = [];
+      onLog(`   Created empty list ${output}`, 'Info');
+      return true;
+    }
+    if (activityId === 'add-to-collection' || activityId === 'remove-from-collection' || activityId === 'clear-collection') {
+      const collectionName = getCollectionVariableName(properties.collection);
+      const collection = values[collectionName];
+      if (!collectionName || !Array.isArray(collection)) {
+        onLog(`   Collection variable "${collectionName || 'unknown'}" is not a list`, 'Error');
+        return false;
+      }
+      if (activityId === 'clear-collection') {
+        collection.length = 0;
+        onLog(`   Cleared ${collectionName}`, 'Info');
+        return true;
+      }
+      const value = resolveCollectionValue(properties.value, values);
+      if (activityId === 'add-to-collection') {
+        collection.push(value);
+        onLog(`   Added item to ${collectionName}`, 'Info');
+        return true;
+      }
+      const index = collection.findIndex((item) => String(item) === String(value));
+      if (index >= 0) collection.splice(index, 1);
+      onLog(index >= 0 ? `   Removed item from ${collectionName}` : `   No matching item in ${collectionName}`, 'Info');
+      return true;
+    }
+    const resolvedProperties = resolveProperties(properties, values);
+    if (activityId === 'write-csv') {
+      resolvedProperties.data = resolveCollectionValue(properties.data, values);
+    }
+    const result = await runActivity(activityId, resolvedProperties, onLog);
     if (result.outputs) Object.assign(values, result.outputs);
     return result.success;
   };
@@ -202,6 +248,36 @@ export async function executeWorkflow(
     onLog(`→ ${node.data.label}`, 'Info');
 
     if (node.data.isContainer) {
+      if (node.data.activityId === 'retry-scope') {
+        const childIds = node.data.childIds ?? [];
+        const children = childIds.map((id) => nodes.find((item) => item.id === id)).filter(Boolean) as Node<WorkflowNodeData>[];
+        const maxRetries = Math.max(0, Number(node.data.properties.maxRetries ?? 3));
+        const retryDelay = Math.max(0, Number(node.data.properties.retryDelay ?? 1000));
+        let succeeded = false;
+
+        for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+          if (attempt > 0) {
+            onLog(`  Retry ${attempt} of ${maxRetries}`, 'Warning');
+            if (retryDelay > 0) await sleep(retryDelay);
+          }
+          let attemptSucceeded = true;
+          for (const child of children) {
+            if (_stopRequested) { onNodeEnd(node.id); onLog('Stopped by user', 'Warning'); return 'stopped'; }
+            onNodeStart(child.id);
+            await maybeBreak(child.id, 1);
+            if (_stopRequested) { onNodeEnd(child.id); onNodeEnd(node.id); onLog('Stopped by user', 'Warning'); return 'stopped'; }
+            onLog(`  → ${child.data.label}`, 'Info');
+            const childOk = await runWithValues(child.data.activityId, child.data.properties);
+            onNodeEnd(child.id);
+            if (!childOk) { attemptSucceeded = false; break; }
+          }
+          if (attemptSucceeded) { succeeded = true; break; }
+        }
+        onNodeEnd(node.id);
+        if (!succeeded) { onLog(`✗  "${node.data.label}" exhausted all retries`, 'Error'); return 'error'; }
+        continue;
+      }
+
       if (node.data.activityId === 'for-each') {
         const loopVariable = node.data.loopVariable;
         const items = resolveCollection(node.data.properties.collection, values);

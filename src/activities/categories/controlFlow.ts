@@ -92,6 +92,20 @@ export const controlFlowActivities: ActivityDefinition[] = [
     ],
   },
   {
+    id: 'retry-scope',
+    name: 'Retry Scope',
+    category: 'controlFlow',
+    icon: '↻',
+    description: 'Retries contained activities after a failure',
+    color: '#6A1B9A',
+    nodeType: 'loop',
+    isContainer: true,
+    properties: [
+      { name: 'maxRetries', label: 'Maximum Retries', type: 'number', defaultValue: 3, required: true },
+      { name: 'retryDelay', label: 'Retry Delay (ms)', type: 'number', defaultValue: 1000, required: true },
+    ],
+  },
+  {
     id: 'break',
     name: 'Break',
     category: 'controlFlow',

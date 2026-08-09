@@ -57,6 +57,7 @@ function ContainerCard({
   const url    = String(node.data.properties['url'] ?? '');
   const hasTarget = url.length > 0;
   const isCollapsed = !!node.data.collapsed;
+  const isTargetContainer = node.data.activityId === 'use-app-browser';
 
   return (
     <div
@@ -75,13 +76,13 @@ function ContainerCard({
         <span className="container-card__hdr-icon">{node.data.icon}</span>
         <span className="container-card__hdr-name">{node.data.label}</span>
         <div className="container-card__hdr-actions">
-          {!hasTarget && <span className="container-card__warn" title="No target set">⚠</span>}
+          {isTargetContainer && !hasTarget && <span className="container-card__warn" title="No target set">⚠</span>}
           <button className="seq-card__collapse" onClick={(e) => { e.stopPropagation(); toggleNodeCollapsed(node.id); }} title={isCollapsed ? 'Expand block' : 'Collapse block'}>{isCollapsed ? '▸' : '▾'}</button>
           <button className="container-card__del" onClick={(e) => { e.stopPropagation(); onDelete(); }} title="Remove">×</button>
         </div>
       </div>
 
-      {!isCollapsed && <><div className="container-card__indicate">
+      {!isCollapsed && <>{isTargetContainer && <div className="container-card__indicate">
         {hasTarget ? (
           <span
             className="container-card__target-url"
@@ -101,9 +102,9 @@ function ContainerCard({
             <span className="container-card__indicate-sub">or drag a screen from Object Repository</span>
           </span>
         )}
-      </div>
+      </div>}
 
-      {indicating && createPortal(
+      {isTargetContainer && indicating && createPortal(
         <IndicateModal
           onConfirm={(result) => {
             updateNodeProperties(node.id, {
@@ -123,7 +124,7 @@ function ContainerCard({
       <div
         className="container-card__do"
         onDragEnter={(e) => { e.preventDefault(); setChildDragActive(true); }}
-        onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) { setChildDragActive(false); setChildDropIdx(-1); } }}
+        onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as unknown as globalThis.Node)) { setChildDragActive(false); setChildDropIdx(-1); } }}
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {
           e.preventDefault();
@@ -133,7 +134,7 @@ function ContainerCard({
           setChildDragActive(false); setChildDropIdx(-1); setChildDraggingIdx(null);
         }}
       >
-        <div className="container-card__do-hdr">↳ Do</div>
+        <div className="container-card__do-hdr">↳ {node.data.activityId === 'retry-scope' ? 'Retry these activities' : 'Do'}</div>
         <div className="container-card__do-body">
           <InsertZone index={0} active={childDropIdx === 0} visible={childDragActive}
             onDragOver={() => setChildDropIdx(0)} onDrop={handleChildDrop} />
@@ -439,7 +440,7 @@ export function SequenceCanvas() {
 
   // Drag leaves the whole canvas — hide insertion lines
   const handleCanvasDragLeave = useCallback((e: React.DragEvent) => {
-    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+    if (!e.currentTarget.contains(e.relatedTarget as unknown as globalThis.Node)) {
       setCanvasDragActive(false);
       setDropIndex(-1);
     }

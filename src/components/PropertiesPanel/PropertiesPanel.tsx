@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useWorkflowStore } from '../../store/workflowStore';
 import { getActivity } from '../../activities/registry';
+import type { PropertyDefinition } from '../../types';
 import { RecorderModal } from '../Recorder/RecorderModal';
 import { DesktopPickerModal } from '../Recorder/DesktopPickerModal';
 import { ExpressionInput } from './ExpressionInput';
@@ -71,6 +72,7 @@ function PropertiesContent() {
   // Group properties by section for container activities
   const isContainer = selectedNode.data.isContainer;
   const isForEach = selectedNode.data.activityId === 'for-each';
+  const isTargetContainer = selectedNode.data.activityId === 'use-app-browser';
   const targetType = (selectedNode.data.properties?.targetType as string) || 'browser';
   const isBrowserTarget = targetType === 'browser';
   
@@ -78,7 +80,7 @@ function PropertiesContent() {
     'Common': ['displayName'],
     'For Each': ['collection', 'loopVariable'],
     'Misc': ['private'],
-  } : isContainer ? {
+  } : isContainer && isTargetContainer ? {
     'Common': ['displayName'],
     ...(isBrowserTarget ? {
       'Input': ['url'],
@@ -94,7 +96,7 @@ function PropertiesContent() {
     'Misc': ['private'],
   };
 
-  const renderField = (prop: ReturnType<typeof getActivity>['properties'][0]) => {
+  const renderField = (prop: PropertyDefinition) => {
     if (!prop) return null;
     if (prop.type === 'variable') {
       return (
@@ -173,12 +175,11 @@ function PropertiesContent() {
       );
     }
     return (
-      <input
-        type="number"
-        className="pgrid-input"
-        value={Number(props[prop.name] ?? prop.defaultValue ?? 0)}
-        onChange={(e) => handleChange(prop.name, Number(e.target.value))}
+      <ExpressionInput
+        value={String(props[prop.name] ?? prop.defaultValue ?? '')}
+        onChange={(value) => handleChange(prop.name, value)}
         placeholder={prop.description ?? ''}
+        variables={scopedVariables}
       />
     );
   };

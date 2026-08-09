@@ -122,7 +122,7 @@ export function ActivityPanel() {
         ) : (
           /* Normal tree mode */
           <>
-            <Section title="Favorites">
+            <Section title="Favorites" defaultOpen={false}>
               {favoriteActivities.map((a) => <ActivityItem key={a.id} activity={a} />)}
             </Section>
 
@@ -130,7 +130,7 @@ export function ActivityPanel() {
               {recentActivities.map((a) => <ActivityItem key={a.id} activity={a} />)}
             </Section>
 
-            <Section title="Installed">
+            <Section title="Installed" defaultOpen={false}>
               {activityCategories.map((category) => {
                 const isExpanded = expandedCategories.includes(category.id);
                 return (

@@ -29,4 +29,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('open-workflow') as Promise<
       { cancelled: true } | { path: string; content: string }
     >,
+  getDotNetTypes: () => ipcRenderer.invoke('get-dotnet-types') as Promise<string[]>,
 })

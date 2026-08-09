@@ -3,6 +3,8 @@ export type PropertyType = 'string' | 'number' | 'boolean' | 'expression' | 'var
 export interface PropertyDefinition {
   name: string;
   label: string;
+  // Text-like property types are rendered by the shared ExpressionInput and
+  // support {{variable}} interpolation and autocomplete by default.
   type: PropertyType;
   defaultValue?: unknown;
   options?: { label: string; value: string }[];
