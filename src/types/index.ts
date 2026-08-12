@@ -18,7 +18,8 @@ export interface ActivityDefinition {
   id: string;
   name: string;
   category: string;
-  icon: string;
+  group?: string;
+  icon?: string;
   description: string;
   color: string;
   properties: PropertyDefinition[];

@@ -12,35 +12,53 @@
     "package:win": "npm run build && electron-builder --win --x64"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^1.0.5",
+    "pdfjs-dist": "^6.2.108",
+    "playwright-core": "^1.45.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "reactflow": "^11.11.4",
-    "zustand": "^4.5.4",
+    "tesseract.js": "^7.0.0",
     "uuid": "^9.0.1",
-    "playwright-core": "^1.45.0"
+    "zustand": "^4.5.4"
   },
   "devDependencies": {
+    "@types/node": "^20.14.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@types/uuid": "^9.0.8",
     "@vitejs/plugin-react": "^4.3.1",
-    "typescript": "^5.4.5",
-    "vite": "^5.3.4",
-    "@types/node": "^20.14.0",
     "electron": "^30.0.0",
     "electron-builder": "^24.13.3",
+    "typescript": "^5.4.5",
+    "vite": "^5.3.4",
     "vite-plugin-electron": "^0.28.8"
   },
   "build": {
     "appId": "com.rpa.studio",
     "productName": "Runway Studio",
     "copyright": "Copyright © 2026 Runway Studio",
-    "files": ["dist/**/*", "dist-electron/**/*"],
-    "directories": { "output": "release" },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     },
     "nsis": {

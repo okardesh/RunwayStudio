@@ -1,8 +1,12 @@
 import { runBrowserActivity } from './browser.js';
 import { runDesktopActivity } from './desktop.js';
-import { execSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { dialog, shell } from 'electron';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import { createCanvas } from '@napi-rs/canvas';
+import Tesseract from 'tesseract.js';
 
 // Activities handled by the browser Playwright engine
 const BROWSER_ACTIVITIES = new Set([
@@ -56,6 +60,127 @@ function csvCell(value: unknown) {
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
+async function openPdf(filePath: string) {
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const bytes = new Uint8Array(fs.readFileSync(filePath));
+  return pdfjs.getDocument({ data: bytes }).promise;
+}
+
+async function extractPdfText(filePath: string) {
+  const document = await openPdf(filePath);
+  const pages: string[] = [];
+  for (let index = 1; index <= document.numPages; index += 1) {
+    const page = await document.getPage(index);
+    const content = await page.getTextContent();
+    pages.push(content.items.map((item: any) => item.str ?? '').join(' ').trim());
+  }
+  return pages.filter(Boolean).join('\n\n');
+}
+
+async function recognizePdfText(filePath: string, language: string) {
+  const document = await openPdf(filePath);
+  const pages: string[] = [];
+  for (let index = 1; index <= document.numPages; index += 1) {
+    const page = await document.getPage(index);
+    const viewport = page.getViewport({ scale: 2 });
+    const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+    await page.render({ canvas: null, canvasContext: canvas.getContext('2d') as any, viewport }).promise;
+    const result = await Tesseract.recognize(canvas.toBuffer('image/png'), language);
+    pages.push(result.data.text.trim());
+  }
+  return pages.filter(Boolean).join('\n\n');
+}
+
+const wait = (milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+
+function splitArguments(value: string) {
+  return value.match(/(?:[^\s"]+|"[^"]*")+/g)?.map((argument) => argument.replace(/^"|"$/g, '')) ?? [];
+}
+
+function normalizeScriptLanguage(requestedLanguage: string, scriptPath: string) {
+  if (requestedLanguage !== 'Auto Detect') return requestedLanguage;
+  switch (path.extname(scriptPath).toLowerCase()) {
+    case '.ps1': return 'PowerShell';
+    case '.py': return 'Python';
+    case '.cs':
+    case '.csx': return 'C#';
+    default: throw new Error('Cannot detect script language. Select a language explicitly.');
+  }
+}
+
+async function executeFile(command: string, argumentsList: string[]) {
+  return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    execFile(command, argumentsList, { windowsHide: true, timeout: 120000, maxBuffer: 8 * 1024 * 1024 }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(String(stderr || error.message).trim()));
+        return;
+      }
+      resolve({ stdout: String(stdout).trim(), stderr: String(stderr).trim() });
+    });
+  });
+}
+
+async function executeScript(scriptPath: string, language: string, argumentText: string) {
+  if (!fs.existsSync(scriptPath)) throw new Error(`Script file not found: ${scriptPath}`);
+  const args = splitArguments(argumentText);
+  if (language === 'PowerShell') return executeFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, ...args]);
+  if (language === 'Python') {
+    try {
+      return await executeFile('py.exe', ['-3', scriptPath, ...args]);
+    } catch (error) {
+      if (!/ENOENT|not found/i.test(String(error))) throw error;
+      return executeFile('python.exe', [scriptPath, ...args]);
+    }
+  }
+  if (language === 'C#') return executeFile('dotnet-script', [scriptPath, ...args]);
+  throw new Error(`Unsupported script language: ${language}`);
+}
+
+function graphUrl(graphPath: string) {
+  return `https://graph.microsoft.com/v1.0${graphPath.startsWith('/') ? graphPath : `/${graphPath}`}`;
+}
+
+async function graphRequest(accessToken: string, graphPath: string, method = 'GET', body?: unknown) {
+  if (!accessToken) throw new Error('A Microsoft 365 access token is required');
+  const response = await fetch(graphUrl(graphPath), {
+    method,
+    headers: { Authorization: `Bearer ${accessToken}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(`Microsoft Graph ${response.status}: ${await response.text()}`);
+  return response;
+}
+
+async function connectMicrosoft365(tenantId: string, clientId: string, scopes: string) {
+  if (!clientId) throw new Error('Application (Client) ID is required for Microsoft 365 sign-in');
+  const authority = `https://login.microsoftonline.com/${encodeURIComponent(tenantId || 'organizations')}/oauth2/v2.0`;
+  const deviceResponse = await fetch(`${authority}/devicecode`, {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: clientId, scope: scopes }),
+  });
+  if (!deviceResponse.ok) throw new Error(`Could not start Microsoft sign-in: ${await deviceResponse.text()}`);
+  const device = await deviceResponse.json() as { device_code: string; user_code: string; verification_uri: string; message: string; expires_in: number; interval?: number };
+  const choice = await dialog.showMessageBox({ type: 'info', title: 'Microsoft 365 sign-in', message: 'Sign in to Microsoft 365', detail: device.message, buttons: ['Open sign-in page', 'Cancel'], defaultId: 0, cancelId: 1 });
+  if (choice.response === 1) throw new Error('Microsoft 365 sign-in was cancelled');
+  await shell.openExternal(device.verification_uri);
+
+  const deadline = Date.now() + device.expires_in * 1000;
+  let interval = Math.max(2, device.interval ?? 5) * 1000;
+  while (Date.now() < deadline) {
+    await wait(interval);
+    const tokenResponse = await fetch(`${authority}/token`, {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:device_code', client_id: clientId, device_code: device.device_code }),
+    });
+    const token = await tokenResponse.json() as { access_token?: string; error?: string; error_description?: string };
+    if (token.access_token) return token.access_token;
+    if (token.error === 'authorization_pending') continue;
+    if (token.error === 'slow_down') { interval += 5000; continue; }
+    throw new Error(token.error_description ?? token.error ?? 'Microsoft 365 sign-in failed');
+  }
+  throw new Error('Microsoft 365 sign-in timed out');
+}
+
 export async function executeActivity(
   id: string,
   props: Record<string, unknown>
@@ -70,6 +195,26 @@ export async function executeActivity(
       case 'delay':
         await new Promise(r => setTimeout(r, Number(props.duration ?? 1000)));
         return { success: true, log: `Delayed ${props.duration ?? 1000} ms` };
+      case 'run-script-file': {
+        const scriptPath = String(props.path ?? '');
+        const language = normalizeScriptLanguage(String(props.language ?? 'Auto Detect'), scriptPath);
+        const result = await executeScript(scriptPath, language, String(props.arguments ?? ''));
+        const output = result.stdout || result.stderr;
+        return { success: true, log: output ? `${language} script completed: ${output}` : `${language} script completed`, outputs: { [String(props.output ?? 'scriptOutput')]: output } };
+      }
+      case 'run-script-code': {
+        const language = String(props.language ?? 'PowerShell');
+        const extension = language === 'PowerShell' ? '.ps1' : language === 'Python' ? '.py' : '.csx';
+        const scriptPath = path.join(os.tmpdir(), `runway-script-${Date.now()}-${Math.floor(Math.random() * 1e6)}${extension}`);
+        fs.writeFileSync(scriptPath, String(props.code ?? ''), 'utf8');
+        try {
+          const result = await executeScript(scriptPath, language, String(props.arguments ?? ''));
+          const output = result.stdout || result.stderr;
+          return { success: true, log: output ? `${language} script completed: ${output}` : `${language} script completed`, outputs: { [String(props.output ?? 'scriptOutput')]: output } };
+        } finally {
+          fs.rmSync(scriptPath, { force: true });
+        }
+      }
       case 'assign':
         return { success: true, log: `${props.to} = ${props.value}`, outputs: { [String(props.to ?? '_')]: props.value } };
       case 'throw':
@@ -132,6 +277,58 @@ export async function executeActivity(
           .filter((row) => row !== '').join('\r\n');
         fs.writeFileSync(String(props.path), content, 'utf8');
         return { success: true, log: `Wrote ${rows.length} CSV row${rows.length === 1 ? '' : 's'} to ${props.path}` };
+      }
+      case 'read-pdf': {
+        const text = await extractPdfText(String(props.path ?? ''));
+        return { success: true, log: `Extracted ${text.length} characters from PDF`, outputs: { [String(props.output ?? 'pdfText')]: text } };
+      }
+      case 'ocr-image': {
+        const result = await Tesseract.recognize(String(props.path ?? ''), String(props.language ?? 'eng'));
+        const text = result.data.text.trim();
+        return { success: true, log: `Recognized ${text.length} characters from image`, outputs: { [String(props.output ?? 'ocrText')]: text } };
+      }
+      case 'ocr-pdf': {
+        const text = await recognizePdfText(String(props.path ?? ''), String(props.language ?? 'eng'));
+        return { success: true, log: `Recognized ${text.length} characters from scanned PDF`, outputs: { [String(props.output ?? 'ocrText')]: text } };
+      }
+      case 'connect-m365': {
+        const accessToken = await connectMicrosoft365(String(props.tenantId ?? 'organizations'), String(props.clientId ?? ''), String(props.scopes ?? 'User.Read'));
+        return { success: true, log: 'Connected to Microsoft 365', outputs: { [String(props.output ?? 'm365Token')]: accessToken } };
+      }
+      case 'outlook-send-email': {
+        const recipients = String(props.to ?? '').split(/[;,]/).map((address) => address.trim()).filter(Boolean).map((address) => ({ emailAddress: { address } }));
+        if (!recipients.length) throw new Error('At least one recipient is required');
+        await graphRequest(String(props.accessToken ?? ''), '/me/sendMail', 'POST', { message: { subject: String(props.subject ?? ''), body: { contentType: String(props.bodyType ?? 'HTML'), content: String(props.body ?? '') }, toRecipients: recipients }, saveToSentItems: true });
+        return { success: true, log: `Sent Outlook email to ${recipients.length} recipient${recipients.length === 1 ? '' : 's'}` };
+      }
+      case 'outlook-get-emails': {
+        const folder = String(props.folder ?? 'Inbox');
+        const folderPath = folder.toLowerCase() === 'inbox' ? 'inbox' : encodeURIComponent(folder);
+        const limit = Math.max(1, Math.min(100, Number(props.limit ?? 25)));
+        const response = await graphRequest(String(props.accessToken ?? ''), `/me/mailFolders/${folderPath}/messages?$top=${limit}&$select=id,subject,bodyPreview,receivedDateTime,from,isRead`);
+        const payload = await response.json() as { value?: unknown[] };
+        const emails = payload.value ?? [];
+        return { success: true, log: `Read ${emails.length} Outlook email${emails.length === 1 ? '' : 's'}`, outputs: { [String(props.output ?? 'emails')]: emails } };
+      }
+      case 'onedrive-upload-file': {
+        const localPath = String(props.localPath ?? '');
+        const remotePath = String(props.remotePath ?? '').split('/').filter(Boolean).map(encodeURIComponent).join('/');
+        const response = await fetch(graphUrl(`/me/drive/root:/${remotePath}:/content`), { method: 'PUT', headers: { Authorization: `Bearer ${String(props.accessToken ?? '')}`, 'Content-Type': 'application/octet-stream' }, body: fs.readFileSync(localPath) });
+        if (!response.ok) throw new Error(`OneDrive upload ${response.status}: ${await response.text()}`);
+        return { success: true, log: `Uploaded ${path.basename(localPath)} to OneDrive` };
+      }
+      case 'onedrive-download-file': {
+        const remotePath = String(props.remotePath ?? '').split('/').filter(Boolean).map(encodeURIComponent).join('/');
+        const response = await graphRequest(String(props.accessToken ?? ''), `/me/drive/root:/${remotePath}:/content`);
+        fs.writeFileSync(String(props.localPath ?? ''), Buffer.from(await response.arrayBuffer()));
+        return { success: true, log: `Downloaded OneDrive file to ${props.localPath}` };
+      }
+      case 'm365-graph-request': {
+        const body = String(props.body ?? '').trim();
+        const response = await graphRequest(String(props.accessToken ?? ''), String(props.path ?? '/me'), String(props.method ?? 'GET'), body ? JSON.parse(body) : undefined);
+        const contentType = response.headers.get('content-type') ?? '';
+        const value = contentType.includes('application/json') ? await response.json() : await response.text();
+        return { success: true, log: `Microsoft Graph ${props.method ?? 'GET'} ${props.path}`, outputs: { [String(props.output ?? 'graphResult')]: value } };
       }
       case 'http-request': {
         const res = await fetch(String(props.url ?? ''), {

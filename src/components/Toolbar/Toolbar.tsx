@@ -11,7 +11,7 @@ interface ToolbarProps {
 
 export function Toolbar({ activeTab }: ToolbarProps) {
   const { projectName, status, isDirty, setProjectName, clearWorkflow, nodes } = useWorkflowStore();
-  const { activeBottomPanelTab, setActiveBottomPanelTab, setStatusMessage, toggleRecorder } = useUiStore();
+  const { activeBottomPanelTab, setActiveBottomPanelTab, setStatusMessage } = useUiStore();
   const [editingName, setEditingName] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -215,10 +215,6 @@ export function Toolbar({ activeTab }: ToolbarProps) {
 
       <div className="ribbon__group">
         <div className="ribbon__btns">
-          <button className="rbn-btn rbn-btn--accent" onClick={toggleRecorder} title="Record UI element">
-            <span className="rbn-btn__icon rbn-btn__icon--lg">⏺</span>
-            <span className="rbn-btn__label">Recording</span>
-          </button>
           <button className="rbn-btn" disabled title="Screen Scraping">
             <span className="rbn-btn__icon">🖼️</span>
             <span className="rbn-btn__label">Screen<br/>Scraping</span>

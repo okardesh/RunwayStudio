@@ -6,6 +6,9 @@ import { waitVerifyActivities } from './categories/waitVerify';
 import { systemActivities } from './categories/system';
 import { controlFlowActivities } from './categories/controlFlow';
 import { dataActivities } from './categories/data';
+import { documentActivities } from './categories/documents';
+import { office365Activities } from './categories/office365';
+import { outlookWindowsActivities } from './categories/outlookWindows';
 
 export const activityCategories: ActivityCategory[] = [
   {
@@ -16,7 +19,7 @@ export const activityCategories: ActivityCategory[] = [
   },
   {
     id: 'uiAutomation',
-    name: 'UI Interaction',
+    name: 'UI Automation',
     icon: '🖱',
     activities: uiAutomationActivities,
   },
@@ -34,7 +37,7 @@ export const activityCategories: ActivityCategory[] = [
   },
   {
     id: 'controlFlow',
-    name: 'Control Flow',
+    name: 'Workflow',
     icon: '◈',
     activities: controlFlowActivities,
   },
@@ -49,6 +52,24 @@ export const activityCategories: ActivityCategory[] = [
     name: 'Data & Files',
     icon: '🗄',
     activities: dataActivities,
+  },
+  {
+    id: 'documents',
+    name: 'Documents',
+    icon: 'PDF',
+    activities: documentActivities,
+  },
+  {
+    id: 'office365',
+    name: 'Microsoft 365',
+    icon: 'M365',
+    activities: office365Activities,
+  },
+  {
+    id: 'mail',
+    name: 'Mail',
+    icon: 'MAIL',
+    activities: outlookWindowsActivities,
   },
 ];
 

@@ -23,9 +23,7 @@ function ActivityItem({ activity, indent = false }: { activity: ActivityDefiniti
       onDragStart={handleDragStart}
       title={activity.description}
     >
-      <span className="activity-item__icon" style={{ color: activity.color }}>
-        {activity.icon}
-      </span>
+      {activity.icon && <span className="activity-item__icon" style={{ color: activity.color }}>{activity.icon}</span>}
       <span className="activity-item__name">{activity.name}</span>
     </div>
   );
@@ -48,6 +46,19 @@ function Section({
         <span className="ap-section__title">{title}</span>
       </button>
       {open && <div className="ap-section__body">{children}</div>}
+    </div>
+  );
+}
+
+function ActivityGroup({ name, activities }: { name: string; activities: ActivityDefinition[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="activity-group">
+      <button className="activity-group__header" onClick={() => setOpen(!open)}>
+        <span className={`activity-category__arrow${open ? ' open' : ''}`}>▸</span>
+        <span className="activity-group__name">{name}</span>
+      </button>
+      {open && <div className="activity-group__items">{activities.map((activity) => <ActivityItem key={activity.id} activity={activity} indent />)}</div>}
     </div>
   );
 }
@@ -141,9 +152,14 @@ export function ActivityPanel() {
                     </button>
                     {isExpanded && (
                       <div className="activity-category__items">
-                        {category.activities.map((activity) => (
-                          <ActivityItem key={activity.id} activity={activity} indent />
-                        ))}
+                        {Object.entries(category.activities.reduce<Record<string, ActivityDefinition[]>>((groups, activity) => {
+                          const group = activity.group ?? '';
+                          (groups[group] ??= []).push(activity);
+                          return groups;
+                        }, {})).map(([group, activities]) => group
+                          ? <ActivityGroup key={group} name={group} activities={activities} />
+                          : activities.map((activity) => <ActivityItem key={activity.id} activity={activity} indent />)
+                        )}
                       </div>
                     )}
                   </div>
@@ -151,11 +167,6 @@ export function ActivityPanel() {
               })}
             </Section>
 
-            <Section title="Available" defaultOpen={false}>
-              <div className="activity-panel__empty" style={{ padding: '8px 12px' }}>
-                No additional packages available.
-              </div>
-            </Section>
           </>
         )}
       </div>

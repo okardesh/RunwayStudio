@@ -136,7 +136,7 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
       data: {
         activityId,
         label: activity.name,
-        icon: activity.icon,
+        icon: activity.icon ?? '',
         color: activity.color,
         properties: defaultProperties,
         isContainer: activity.isContainer ?? false,
@@ -167,7 +167,7 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
       data: {
         activityId,
         label: activity.name,
-        icon: activity.icon,
+        icon: activity.icon ?? '',
         color: activity.color,
         properties: defaultProperties,
         isContainer: activity.isContainer ?? false,
@@ -201,7 +201,7 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
       data: {
         activityId,
         label: activity.name,
-        icon: activity.icon,
+        icon: activity.icon ?? '',
         color: activity.color,
         properties: defaultProperties,
         parentId,
@@ -294,7 +294,7 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
     activity.properties.forEach((property) => { properties[property.name] = property.defaultValue ?? ''; });
     const childNode: Node<WorkflowNodeData> = {
       id: uuidv4(), type: 'activityNode', position: { x: 0, y: 0 },
-      data: { activityId, label: activity.name, icon: activity.icon, color: activity.color, properties, parentId, branchId },
+      data: { activityId, label: activity.name, icon: activity.icon ?? '', color: activity.color, properties, parentId, branchId },
     };
     set((state) => ({
       nodes: [
@@ -321,7 +321,7 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
     activity.properties.forEach((property) => { properties[property.name] = property.defaultValue ?? ''; });
     const childNode: Node<WorkflowNodeData> = {
       id: uuidv4(), type: 'activityNode', position: { x: 0, y: 0 },
-      data: { activityId, label: activity.name, icon: activity.icon, color: activity.color, properties, parentId, branchId },
+      data: { activityId, label: activity.name, icon: activity.icon ?? '', color: activity.color, properties, parentId, branchId },
     };
     set((state) => ({
       nodes: [

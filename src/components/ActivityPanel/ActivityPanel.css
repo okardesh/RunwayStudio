@@ -163,6 +163,24 @@
 
 .activity-category__items { padding: 0; }
 
+.activity-group__header {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 3px 8px 3px 28px;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: #333;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+}
+.activity-group__header:hover { background: #E4E4E4; }
+.activity-group__name { flex: 1; }
+.activity-group__items .activity-item--indent { padding-left: 42px; }
+
 /* Activity items */
 .activity-item {
   display: flex;
