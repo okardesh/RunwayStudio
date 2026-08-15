@@ -9,7 +9,9 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "package": "npm run build && electron-builder",
-    "package:win": "npm run build && electron-builder --win --x64"
+    "package:win": "node scripts/build-unified-installer.mjs",
+    "package:win:studio": "npm run build && electron-builder --win --arm64",
+    "package:win:robot": "npm.cmd --prefix Robot run package:win"
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.5",
@@ -42,6 +44,9 @@
       "dist/**/*",
       "dist-electron/**/*"
     ],
+    "asarUnpack": [
+      "node_modules/@napi-rs/canvas-win32-arm64-msvc/**"
+    ],
     "directories": {
       "output": "release"
     },
@@ -50,13 +55,13 @@
         {
           "target": "nsis",
           "arch": [
-            "x64"
+            "arm64"
           ]
         },
         {
           "target": "portable",
           "arch": [
-            "x64"
+            "arm64"
           ]
         }
       ]
@@ -65,5 +70,8 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     }
+  },
+  "optionalDependencies": {
+    "@napi-rs/canvas-win32-arm64-msvc": "^1.0.5"
   }
 }

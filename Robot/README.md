@@ -71,3 +71,13 @@ Robot posts the execution result to `callbackUrl` with the same `X-API-Key` and 
 ```
 
 Failed jobs use `"status": "failed"` and include an `error` field plus the collected job log.
+
+## Windows installer
+
+Build the unified Windows installer from the Studio workspace root:
+
+```powershell
+npm run package:win
+```
+
+The installer is written to `release/Runway Setup 0.1.0.exe`. Its component selection page lets users install Studio, Robot, or both applications.

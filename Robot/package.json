@@ -7,13 +7,54 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -p tsconfig.json && vite build",
-    "start": "electron ."
+    "start": "electron .",
+    "package": "npm run build && electron-builder",
+    "package:win": "npm run build && electron-builder --win nsis --arm64"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^1.0.5",
+    "pdfjs-dist": "^6.2.108",
+    "playwright-core": "^1.45.0",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
     "electron": "^30.0.0",
+    "electron-builder": "^24.13.3",
     "typescript": "^5.4.5",
     "vite": "^5.3.4",
     "vite-plugin-electron": "^0.28.8"
+  },
+  "build": {
+    "appId": "com.runway.robot",
+    "productName": "Runway Robot",
+    "copyright": "Copyright © 2026 Runway Studio",
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/@napi-rs/canvas-win32-arm64-msvc/**"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "optionalDependencies": {
+    "@napi-rs/canvas-win32-arm64-msvc": "^1.0.6"
   }
 }
