@@ -1,5 +1,5 @@
 Unicode true
-SetCompressor /SOLID lzma
+SetCompressor /SOLID zlib
 
 !include "MUI2.nsh"
 
