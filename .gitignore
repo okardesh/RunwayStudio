@@ -1,6 +1,12 @@
 node_modules/
 dist/
 dist-electron/
+Robot/node_modules/
+Robot/dist/
+Robot/dist-electron/
+Robot/src/*.js
+Robot/vite.config.js
+electron/automation/*.js
 release/
 .claude/settings.local.json
 *.log

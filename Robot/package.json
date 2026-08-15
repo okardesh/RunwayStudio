@@ -1,0 +1,19 @@
+{
+  "name": "runway-robot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build",
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "electron": "^30.0.0",
+    "typescript": "^5.4.5",
+    "vite": "^5.3.4",
+    "vite-plugin-electron": "^0.28.8"
+  }
+}
