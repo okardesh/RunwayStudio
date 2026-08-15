@@ -40,6 +40,11 @@ let activeJob = false;
 const queue: Trigger[] = [];
 let connection: { serverUrl: string; apiKey: string; deviceName: string } | null = null;
 
+function logoPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'assets', 'logo.png')
+    : path.resolve(APP_ROOT, '..', 'public', 'logo.png');
+}
 function settingsPath() { return path.join(app.getPath('userData'), 'robot-settings.json'); }
 function credentialPath() { return path.join(app.getPath('userData'), 'robot-credentials.json'); }
 function readJson<T>(filePath: string, fallback: T): T { try { return JSON.parse(fs.readFileSync(filePath, 'utf8')) as T; } catch { return fallback; } }
@@ -233,15 +238,15 @@ function refreshTray() {
 }
 function showConnectionWindow() {
   if (!connectionWindow) {
-    connectionWindow = new BrowserWindow({ width: 540, height: 650, resizable: false, title: 'Runway Robot', webPreferences: { preload: path.join(__dirname, 'preload.mjs'), contextIsolation: true, nodeIntegration: false } });
+    connectionWindow = new BrowserWindow({ width: 540, height: 650, resizable: false, title: 'Runway Robot', icon: logoPath(), webPreferences: { preload: path.join(__dirname, 'preload.mjs'), contextIsolation: true, nodeIntegration: false } });
     connectionWindow.on('close', (event) => { if (!isQuitting && connection) { event.preventDefault(); connectionWindow?.hide(); } });
   }
-  connectionWindow.loadFile(path.join(APP_ROOT, 'public', 'connect.html'));
+  connectionWindow.loadFile(path.join(APP_ROOT, app.isPackaged ? 'dist' : 'public', 'connect.html'));
   connectionWindow.show();
   connectionWindow.focus();
 }
 app.whenReady().then(async () => {
-  tray = new Tray(nativeImage.createFromPath(path.resolve(APP_ROOT, '..', 'public', 'logo.png')));
+  tray = new Tray(nativeImage.createFromPath(logoPath()));
   refreshTray();
   ipcMain.handle('robot:status', () => ({ connected: !!connection, serverUrl: readSettings().serverUrl, port: LISTENER_PORT, deviceName: hostname() }));
   ipcMain.handle('robot:connect', async (_event, serverUrl: string) => {

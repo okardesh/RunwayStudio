@@ -36,6 +36,11 @@ function readCredentials(): StoredCredentials {
 function writeCredentials(credentials: StoredCredentials) {
   fs.writeFileSync(credentialsPath(), JSON.stringify(credentials), { encoding: 'utf8', mode: 0o600 })
 }
+function logoPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'assets', 'logo.png')
+    : path.join(APP_ROOT, 'public', 'logo.png')
+}
 
 function createWindow() {
   // Remove the default native menu bar — the app has its own toolbar
@@ -48,7 +53,7 @@ function createWindow() {
     minHeight: 700,
     backgroundColor: '#1E1F2E',
     title: 'Runway Studio',
-    icon: path.join(APP_ROOT, 'public', 'logo.png'),
+    icon: logoPath(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
       nodeIntegration: false,

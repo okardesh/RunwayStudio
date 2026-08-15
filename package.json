@@ -7,9 +7,12 @@
     "dev": "vite",
     "dev:electron": "vite",
     "build": "tsc && vite build",
+    "generate:icon": "node build/generate-icon.mjs",
     "preview": "vite preview",
     "package": "npm run build && electron-builder",
     "package:win": "node scripts/build-unified-installer.mjs",
+    "package:win:x64": "node scripts/build-unified-installer.mjs x64",
+    "package:win:arm64": "node scripts/build-unified-installer.mjs arm64",
     "package:win:studio": "npm run build && electron-builder --win --arm64",
     "package:win:robot": "npm.cmd --prefix Robot run package:win"
   },
@@ -32,6 +35,7 @@
     "@vitejs/plugin-react": "^4.3.1",
     "electron": "^30.0.0",
     "electron-builder": "^24.13.3",
+    "png-to-ico": "^3.0.2",
     "typescript": "^5.4.5",
     "vite": "^5.3.4",
     "vite-plugin-electron": "^0.28.8"
@@ -44,6 +48,12 @@
       "dist/**/*",
       "dist-electron/**/*"
     ],
+    "extraResources": [
+      {
+        "from": "public/logo.png",
+        "to": "assets/logo.png"
+      }
+    ],
     "asarUnpack": [
       "node_modules/@napi-rs/canvas-win32-arm64-msvc/**"
     ],
@@ -51,6 +61,7 @@
       "output": "release"
     },
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -68,10 +79,13 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
     }
   },
   "optionalDependencies": {
-    "@napi-rs/canvas-win32-arm64-msvc": "^1.0.5"
+    "@napi-rs/canvas-win32-arm64-msvc": "^1.0.5",
+    "@napi-rs/canvas-win32-x64-msvc": "^1.0.5"
   }
 }

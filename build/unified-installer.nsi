@@ -1,10 +1,22 @@
 Unicode true
 SetCompressor /SOLID zlib
 
+!define MUI_ICON "icon.ico"
+!define MUI_UNICON "icon.ico"
 !include "MUI2.nsh"
 
+!ifndef ARCH
+  !error "ARCH must be supplied, for example /DARCH=arm64"
+!endif
+
+!ifndef PAYLOAD_DIR
+  !error "PAYLOAD_DIR must be supplied"
+!endif
+
 Name "Runway"
-OutFile "..\release\Runway Setup 0.1.0.exe"
+Icon "icon.ico"
+UninstallIcon "icon.ico"
+OutFile "..\release\Runway Setup ${ARCH} 0.1.0.exe"
 InstallDir "$LOCALAPPDATA\Programs\Runway"
 RequestExecutionLevel user
 ShowInstDetails show
@@ -23,7 +35,7 @@ ShowUnInstDetails show
 
 Section /o "Runway Studio" SEC_STUDIO
   SetOutPath "$INSTDIR\Studio"
-  File /r "..\release\win-arm64-unpacked\*.*"
+  File /r "..\release\${PAYLOAD_DIR}\*.*"
   CreateDirectory "$SMPROGRAMS\Runway"
   CreateShortCut "$SMPROGRAMS\Runway\Runway Studio.lnk" "$INSTDIR\Studio\Runway Studio.exe"
   WriteUninstaller "$INSTDIR\Uninstall Runway.exe"
@@ -31,7 +43,7 @@ SectionEnd
 
 Section /o "Runway Robot" SEC_ROBOT
   SetOutPath "$INSTDIR\Robot"
-  File /r "..\Robot\release\win-arm64-unpacked\*.*"
+  File /r "..\Robot\release\${PAYLOAD_DIR}\*.*"
   CreateDirectory "$SMPROGRAMS\Runway"
   CreateShortCut "$SMPROGRAMS\Runway\Runway Robot.lnk" "$INSTDIR\Robot\Runway Robot.exe"
   WriteUninstaller "$INSTDIR\Uninstall Runway.exe"

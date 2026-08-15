@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -p tsconfig.json && vite build",
+    "generate:icon": "node ../build/generate-icon.mjs",
     "start": "electron .",
     "package": "npm run build && electron-builder",
     "package:win": "npm run build && electron-builder --win nsis --arm64"
@@ -33,6 +34,12 @@
       "dist/**/*",
       "dist-electron/**/*"
     ],
+    "extraResources": [
+      {
+        "from": "../public/logo.png",
+        "to": "assets/logo.png"
+      }
+    ],
     "asarUnpack": [
       "node_modules/@napi-rs/canvas-win32-arm64-msvc/**"
     ],
@@ -40,6 +47,7 @@
       "output": "release"
     },
     "win": {
+      "icon": "../build/icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -51,10 +59,13 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "../build/icon.ico",
+      "uninstallerIcon": "../build/icon.ico"
     }
   },
   "optionalDependencies": {
-    "@napi-rs/canvas-win32-arm64-msvc": "^1.0.6"
+    "@napi-rs/canvas-win32-arm64-msvc": "^1.0.6",
+    "@napi-rs/canvas-win32-x64-msvc": "^1.0.6"
   }
 }
