@@ -12,7 +12,7 @@ import {
   MarkerType,
 } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
-import type { WorkflowBranch, WorkflowNodeData, WorkflowVariable, WorkflowStatus } from '../types';
+import type { WorkflowArgument, WorkflowBranch, WorkflowNodeData, WorkflowVariable, WorkflowStatus } from '../types';
 import { getActivity } from '../activities/registry';
 
 const createInitialNodes = (): Node<WorkflowNodeData>[] => [];
@@ -31,6 +31,7 @@ interface WorkflowState {
   nodes: Node<WorkflowNodeData>[];
   edges: Edge[];
   variables: WorkflowVariable[];
+  arguments: WorkflowArgument[];
   selectedNodeId: string | null;
   executingNodeId: string | null;
   status: WorkflowStatus;
@@ -65,11 +66,14 @@ interface WorkflowState {
   addVariable: (variable: Omit<WorkflowVariable, 'id'>) => void;
   removeVariable: (variableId: string) => void;
   updateVariable: (variableId: string, changes: Partial<Omit<WorkflowVariable, 'id'>>) => void;
+  addArgument: (argument: Omit<WorkflowArgument, 'id'>) => void;
+  removeArgument: (argumentId: string) => void;
+  updateArgument: (argumentId: string, changes: Partial<Omit<WorkflowArgument, 'id'>>) => void;
   setStatus: (status: WorkflowStatus) => void;
   setProjectName: (name: string) => void;
   clearWorkflow: () => void;
   setExecutingNodeId: (id: string | null) => void;
-  loadWorkflow: (data: { nodes: Node<WorkflowNodeData>[]; edges: Edge[]; variables: WorkflowVariable[]; projectName: string }, filePath?: string | null) => void;
+  loadWorkflow: (data: { nodes: Node<WorkflowNodeData>[]; edges: Edge[]; variables: WorkflowVariable[]; arguments?: WorkflowArgument[]; projectName: string }, filePath?: string | null) => void;
   setFilePath: (filePath: string | null) => void;
   copySelectedNode: () => void;
   cutSelectedNode: () => void;
@@ -81,6 +85,7 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
   nodes: createInitialNodes(),
   edges: [],
   variables: [],
+  arguments: [],
   selectedNodeId: null,
   executingNodeId: null,
   status: 'idle',
@@ -512,6 +517,24 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
       isDirty: true,
     })),
 
+  addArgument: (argument) =>
+    set((state) => ({
+      arguments: [...state.arguments, { ...argument, id: uuidv4() }],
+      isDirty: true,
+    })),
+
+  removeArgument: (argumentId) =>
+    set((state) => ({
+      arguments: state.arguments.filter((argument) => argument.id !== argumentId),
+      isDirty: true,
+    })),
+
+  updateArgument: (argumentId, changes) =>
+    set((state) => ({
+      arguments: state.arguments.map((argument) => argument.id === argumentId ? { ...argument, ...changes } : argument),
+      isDirty: true,
+    })),
+
   setStatus: (status) => set({ status }),
 
   setProjectName: (name) => set({ projectName: name, isDirty: true }),
@@ -521,6 +544,7 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
       nodes: createInitialNodes(),
       edges: [],
       variables: [],
+      arguments: [],
       selectedNodeId: null,
       executingNodeId: null,
       status: 'idle',
@@ -535,6 +559,7 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
       nodes: data.nodes,
       edges: data.edges,
       variables: data.variables,
+      arguments: data.arguments ?? [],
       projectName: data.projectName,
       selectedNodeId: null,
       executingNodeId: null,

@@ -5,7 +5,7 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "dev:electron": "vite & timeout /t 3 && electron .",
+    "dev:electron": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "package": "npm run build && electron-builder",

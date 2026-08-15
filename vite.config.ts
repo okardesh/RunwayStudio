@@ -12,7 +12,7 @@ export default defineConfig({
           build: {
             rollupOptions: {
               // keep native/large packages as external requires in the main process
-              external: ['playwright-core'],
+              external: ['playwright-core', '@napi-rs/canvas', 'pdfjs-dist', 'tesseract.js'],
             },
           },
         },

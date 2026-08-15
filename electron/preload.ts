@@ -30,4 +30,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       { cancelled: true } | { path: string; content: string }
     >,
   getDotNetTypes: () => ipcRenderer.invoke('get-dotnet-types') as Promise<string[]>,
+  getRunwayApiKey: (serverUrl: string) => ipcRenderer.invoke('runway:get-api-key', serverUrl) as Promise<string | null>,
+  storeRunwayApiKey: (serverUrl: string, apiKey: string) => ipcRenderer.invoke('runway:store-api-key', serverUrl, apiKey) as Promise<boolean>,
+  deleteRunwayApiKey: (serverUrl: string) => ipcRenderer.invoke('runway:delete-api-key', serverUrl) as Promise<void>,
+  publishRunwayWorkflow: (url: string, apiKey: string, tenantId: string, payload: unknown) => ipcRenderer.invoke('runway:publish-workflow', { url, apiKey, tenantId, payload }) as Promise<{ networkError: boolean; status: number; body: string }>,
 })

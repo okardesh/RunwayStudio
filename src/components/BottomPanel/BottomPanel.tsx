@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useWorkflowStore } from '../../store/workflowStore';
 import { useUiStore, type BottomPanelTab } from '../../store/uiStore';
-import type { WorkflowVariable } from '../../types';
+import type { WorkflowArgument, WorkflowVariable } from '../../types';
 import './BottomPanel.css';
 
 type SubTab = 'variables' | 'arguments' | 'namespaces' | 'connections';
@@ -27,7 +27,7 @@ const LEVEL_COLORS: Record<string, string> = {
 
 export function BottomPanel() {
   const [subTab, setSubTab] = useState<SubTab>('variables');
-  const { variables, addVariable, removeVariable, updateVariable } = useWorkflowStore();
+  const { variables, addVariable, removeVariable, updateVariable, arguments: workflowArguments, addArgument, removeArgument, updateArgument } = useWorkflowStore();
   const { outputMessages, clearOutput, activeBottomPanelTab: mainTab, setActiveBottomPanelTab } = useUiStore();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
@@ -38,6 +38,9 @@ export function BottomPanel() {
   const [draftName, setDraftName] = useState('');
   const [draftType, setDraftType] = useState('String');
   const [draftDefaultValue, setDraftDefaultValue] = useState('');
+  const [draftArgumentName, setDraftArgumentName] = useState('');
+  const [draftArgumentType, setDraftArgumentType] = useState('String');
+  const [draftArgumentDirection, setDraftArgumentDirection] = useState<'In' | 'Out'>('In');
   const [availableDotNetTypes, setAvailableDotNetTypes] = useState(DOTNET_TYPES);
   const outputEndRef = useRef<HTMLDivElement>(null);
 
@@ -60,6 +63,15 @@ export function BottomPanel() {
     setDraftName('');
     setDraftType('String');
     setDraftDefaultValue('');
+  };
+
+  const commitArgumentDraft = () => {
+    const name = draftArgumentName.trim();
+    if (!name || workflowArguments.some((argument) => argument.name === name)) return;
+    addArgument({ name, type: draftArgumentType, direction: draftArgumentDirection, required: draftArgumentDirection === 'In', defaultValue: '' });
+    setDraftArgumentName('');
+    setDraftArgumentType('String');
+    setDraftArgumentDirection('In');
   };
 
   const startEdit = (v: WorkflowVariable) => {
@@ -235,7 +247,39 @@ export function BottomPanel() {
           </div>
         )}
 
-        {mainTab === 'dataManager' && subTab !== 'variables' && (
+        {mainTab === 'dataManager' && subTab === 'arguments' && (
+          <div className="bp-vars">
+            <div className="bp-vars__table">
+              <div className="bp-vars__head">
+                <div className="bp-cell bp-cell--name">Name</div>
+                <div className="bp-cell bp-cell--type">Data Type</div>
+                <div className="bp-cell bp-cell--scope">Direction</div>
+                <div className="bp-cell bp-cell--ctrl" />
+                <div className="bp-cell bp-cell--default">Required</div>
+              </div>
+              <div className="bp-vars__body">
+                <div className="bp-vars__row bp-vars__row--draft">
+                  <div className="bp-cell bp-cell--name"><input className="bp-cell__input bp-cell__input--draft" value={draftArgumentName} onChange={(event) => setDraftArgumentName(event.target.value)} onBlur={commitArgumentDraft} onKeyDown={(event) => event.key === 'Enter' && commitArgumentDraft()} placeholder="Create argument" /></div>
+                  <div className="bp-cell bp-cell--type"><select className="bp-cell__select" value={draftArgumentType} onChange={(event) => setDraftArgumentType(event.target.value)}>{PRIMARY_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}</select></div>
+                  <div className="bp-cell bp-cell--scope"><select className="bp-cell__select" value={draftArgumentDirection} onChange={(event) => setDraftArgumentDirection(event.target.value as 'In' | 'Out')}><option value="In">In</option><option value="Out">Out</option></select></div>
+                  <div className="bp-cell bp-cell--ctrl" />
+                  <div className="bp-cell bp-cell--default" />
+                </div>
+                {workflowArguments.map((argument: WorkflowArgument) => (
+                  <div key={argument.id} className="bp-vars__row">
+                    <div className="bp-cell bp-cell--name"><input className="bp-cell__input" value={argument.name} onChange={(event) => updateArgument(argument.id, { name: event.target.value })} /></div>
+                    <div className="bp-cell bp-cell--type"><select className="bp-cell__select" value={argument.type} onChange={(event) => updateArgument(argument.id, { type: event.target.value })}>{!PRIMARY_TYPES.includes(argument.type) && <option value={argument.type}>{argument.type}</option>}{PRIMARY_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}</select></div>
+                    <div className="bp-cell bp-cell--scope"><select className="bp-cell__select" value={argument.direction} onChange={(event) => updateArgument(argument.id, { direction: event.target.value as 'In' | 'Out', required: event.target.value === 'In' ? argument.required : false })}><option value="In">In</option><option value="Out">Out</option></select></div>
+                    <div className="bp-cell bp-cell--ctrl"><button className="bp-del-btn" onClick={() => removeArgument(argument.id)} title="Delete">✕</button></div>
+                    <div className="bp-cell bp-cell--default">{argument.direction === 'In' && <label><input type="checkbox" checked={argument.required} onChange={(event) => updateArgument(argument.id, { required: event.target.checked })} /> Required</label>}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {mainTab === 'dataManager' && subTab !== 'variables' && subTab !== 'arguments' && (
           <div className="bp-empty">No {subTab} defined.</div>
         )}
 

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, ipcMain, desktopCapturer, dialog } from 'electron'
+import { app, BrowserWindow, Menu, ipcMain, desktopCapturer, dialog, safeStorage } from 'electron'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -21,6 +21,21 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
   : RENDERER_DIST
 
 let win: BrowserWindow | null = null
+
+type StoredCredentials = Record<string, string>
+
+function credentialsPath() {
+  return path.join(app.getPath('userData'), 'runway-studio-credentials.json')
+}
+
+function readCredentials(): StoredCredentials {
+  try { return JSON.parse(fs.readFileSync(credentialsPath(), 'utf8')) as StoredCredentials }
+  catch { return {} }
+}
+
+function writeCredentials(credentials: StoredCredentials) {
+  fs.writeFileSync(credentialsPath(), JSON.stringify(credentials), { encoding: 'utf8', mode: 0o600 })
+}
 
 function createWindow() {
   // Remove the default native menu bar — the app has its own toolbar
@@ -63,6 +78,46 @@ app.on('activate', () => {
 })
 
 app.whenReady().then(() => {
+  ipcMain.handle('runway:get-api-key', (_event, serverUrl: string) => {
+    if (!safeStorage.isEncryptionAvailable()) return null;
+    const encrypted = readCredentials()[serverUrl];
+    if (!encrypted) return null;
+    try { return safeStorage.decryptString(Buffer.from(encrypted, 'base64')); }
+    catch { return null; }
+  });
+
+  ipcMain.handle('runway:store-api-key', (_event, serverUrl: string, apiKey: string) => {
+    if (!safeStorage.isEncryptionAvailable()) return false;
+    const credentials = readCredentials();
+    credentials[serverUrl] = safeStorage.encryptString(apiKey).toString('base64');
+    writeCredentials(credentials);
+    return true;
+  });
+
+  ipcMain.handle('runway:delete-api-key', (_event, serverUrl: string) => {
+    const credentials = readCredentials();
+    if (!(serverUrl in credentials)) return;
+    delete credentials[serverUrl];
+    writeCredentials(credentials);
+  });
+
+  ipcMain.handle('runway:publish-workflow', async (_event, request: { url: string; apiKey: string; tenantId: string; payload: unknown }) => {
+    try {
+      const response = await fetch(request.url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': request.apiKey,
+          'X-Tenant-Id': request.tenantId,
+        },
+        body: JSON.stringify(request.payload),
+      });
+      return { networkError: false, status: response.status, body: await response.text() };
+    } catch {
+      return { networkError: true, status: 0, body: '' };
+    }
+  });
+
   // Handle all automation activity execution requests from the renderer
   ipcMain.handle('automation:execute', async (_e, id: string, props: Record<string, unknown>) =>
     executeActivity(id, props)

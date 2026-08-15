@@ -6,8 +6,8 @@ const isElectron = () =>
 // Overwrites the remembered file path once one exists (from a prior Save or Open);
 // otherwise prompts once via a native Save dialog and remembers the choice.
 export async function saveWorkflow(): Promise<boolean> {
-  const { nodes, edges, variables, projectName: name, filePath } = useWorkflowStore.getState();
-  const content = JSON.stringify({ nodes, edges, variables, projectName: name }, null, 2);
+  const { nodes, edges, variables, arguments: workflowArguments, projectName: name, filePath } = useWorkflowStore.getState();
+  const content = JSON.stringify({ nodes, edges, variables, arguments: workflowArguments, projectName: name }, null, 2);
   const defaultName = `${name.replace(/\s+/g, '_')}.rpa.json`;
 
   if (isElectron()) {

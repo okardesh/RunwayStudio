@@ -7,9 +7,10 @@ import './Toolbar.css';
 
 interface ToolbarProps {
   activeTab: 'design' | 'debug';
+  onPublish: () => void;
 }
 
-export function Toolbar({ activeTab }: ToolbarProps) {
+export function Toolbar({ activeTab, onPublish }: ToolbarProps) {
   const { projectName, status, isDirty, setProjectName, clearWorkflow, nodes } = useWorkflowStore();
   const { activeBottomPanelTab, setActiveBottomPanelTab, setStatusMessage } = useUiStore();
   const [editingName, setEditingName] = useState(false);
@@ -118,29 +119,43 @@ export function Toolbar({ activeTab }: ToolbarProps) {
       <div className="ribbon__sep" />
 
       {activeTab === 'design' ? (
-        <div className="ribbon__group">
-          <div className="ribbon__btns">
-            <button
-              className={`rbn-btn rbn-btn--run${isRunning ? ' active' : ''}`}
-              onClick={handleRun}
-              disabled={isRunning}
-              title="Run (F5)"
-            >
-              <span className="rbn-btn__icon rbn-btn__icon--lg">▶</span>
-              <span className="rbn-btn__label">Run</span>
-            </button>
-            <button
-              className="rbn-btn rbn-btn--stop"
-              onClick={handleStop}
-              disabled={!isRunning}
-              title="Stop (Shift+F5)"
-            >
-              <span className="rbn-btn__icon rbn-btn__icon--lg">⏹</span>
-              <span className="rbn-btn__label">Stop</span>
-            </button>
+        <>
+          <div className="ribbon__group">
+            <div className="ribbon__btns">
+              <button
+                className={`rbn-btn rbn-btn--run${isRunning ? ' active' : ''}`}
+                onClick={handleRun}
+                disabled={isRunning}
+                title="Run (F5)"
+              >
+                <span className="rbn-btn__icon rbn-btn__icon--lg">▶</span>
+                <span className="rbn-btn__label">Run</span>
+              </button>
+              <button
+                className="rbn-btn rbn-btn--stop"
+                onClick={handleStop}
+                disabled={!isRunning}
+                title="Stop (Shift+F5)"
+              >
+                <span className="rbn-btn__icon rbn-btn__icon--lg">⏹</span>
+                <span className="rbn-btn__label">Stop</span>
+              </button>
+            </div>
+            <span className="ribbon__group-label">Execute</span>
           </div>
-          <span className="ribbon__group-label">Execute</span>
-        </div>
+
+          <div className="ribbon__sep" />
+
+          <div className="ribbon__group">
+            <div className="ribbon__btns">
+              <button className="rbn-btn rbn-btn--publish" onClick={onPublish} disabled={isRunning} title="Publish to Runway RPA Catalog">
+                <span className="rbn-btn__icon rbn-btn__icon--lg">&#x21E7;</span>
+                <span className="rbn-btn__label">Publish</span>
+              </button>
+            </div>
+            <span className="ribbon__group-label">Runway</span>
+          </div>
+        </>
       ) : (
         <>
           <div className="ribbon__group">
@@ -170,8 +185,6 @@ export function Toolbar({ activeTab }: ToolbarProps) {
             </div>
             <span className="ribbon__group-label">Execute</span>
           </div>
-
-          <div className="ribbon__sep" />
 
           <div className="ribbon__group">
             <div className="ribbon__btns">

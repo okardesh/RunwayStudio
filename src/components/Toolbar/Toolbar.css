@@ -91,6 +91,11 @@
 .rbn-btn--run.active,
 .rbn-btn--run:not(:disabled):active { background: #C8E6C9; border-color: #107C10; }
 
+/* Publish */
+.rbn-btn--publish .rbn-btn__icon,
+.rbn-btn--publish .rbn-btn__label { color: #075e9e; }
+.rbn-btn--publish:not(:disabled):hover { background: #e5eff8; border-color: #9bc2e3; }
+
 /* Stop */
 .rbn-btn--stop .rbn-btn__icon,
 .rbn-btn--stop .rbn-btn__label { color: #C50F1F; }

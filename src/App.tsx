@@ -8,6 +8,9 @@ import { BottomPanel } from './components/BottomPanel/BottomPanel';
 import { useWorkflowStore } from './store/workflowStore';
 import { useUiStore } from './store/uiStore';
 import { saveWorkflow, openWorkflow } from './engine/fileOps';
+import { ConnectionAssistant } from './components/ConnectionAssistant/ConnectionAssistant';
+import { heartbeatRunwayLicense, releaseRunwayLicense, type RunwayConnection } from './engine/runwayConnection';
+import { PublishWorkflowModal } from './components/PublishWorkflowModal/PublishWorkflowModal';
 import './App.css';
 
 type Tab = 'design' | 'debug';
@@ -17,10 +20,34 @@ const isEditableTarget = (el: EventTarget | null) =>
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('design');
+  const [runwayConnection, setRunwayConnection] = useState<RunwayConnection | null>(null);
+  const [showPublishModal, setShowPublishModal] = useState(false);
   const projectName = useWorkflowStore((s) => s.projectName);
+  const nodes = useWorkflowStore((s) => s.nodes);
+  const edges = useWorkflowStore((s) => s.edges);
+  const variables = useWorkflowStore((s) => s.variables);
+  const workflowArguments = useWorkflowStore((s) => s.arguments);
 
   // Toolbar reacts to activeTab itself (starts/stops the debug run) — this just switches views.
   const handleTabChange = (tab: Tab) => setActiveTab(tab);
+
+  useEffect(() => {
+    if (!runwayConnection) return;
+    let active = true;
+    const heartbeat = () => {
+      void heartbeatRunwayLicense(runwayConnection).catch(() => {
+        if (active) setRunwayConnection(null);
+      });
+    };
+    const heartbeatTimer = window.setInterval(heartbeat, 120_000);
+    const release = () => { void releaseRunwayLicense(runwayConnection); };
+    window.addEventListener('beforeunload', release, { once: true });
+    return () => {
+      active = false;
+      window.clearInterval(heartbeatTimer);
+      window.removeEventListener('beforeunload', release);
+    };
+  }, [runwayConnection]);
 
   // File commands work from any part of the app; activity clipboard commands leave text fields alone.
   useEffect(() => {
@@ -54,6 +81,10 @@ function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
+  if (!runwayConnection) {
+    return <ConnectionAssistant onConnected={setRunwayConnection} />;
+  }
+
   return (
     <div className="app">
       <header className="app-header">
@@ -80,7 +111,7 @@ function App() {
         </div>
       </header>
 
-      <Toolbar activeTab={activeTab} />
+      <Toolbar activeTab={activeTab} onPublish={() => setShowPublishModal(true)} />
 
       <div className="app__body">
         <div className="app__workspace">
@@ -92,6 +123,16 @@ function App() {
       </div>
 
       <StatusBar />
+
+      {showPublishModal && <PublishWorkflowModal
+        connection={runwayConnection}
+        projectName={projectName}
+        nodes={nodes}
+        edges={edges}
+        variables={variables}
+        workflowArguments={workflowArguments}
+        onClose={() => setShowPublishModal(false)}
+      />}
     </div>
   );
 }

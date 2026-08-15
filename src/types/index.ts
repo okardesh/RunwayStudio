@@ -66,4 +66,13 @@ export interface WorkflowVariable {
   scope: string;
 }
 
+export interface WorkflowArgument {
+  id: string;
+  name: string;
+  type: string;
+  direction: 'In' | 'Out';
+  required: boolean;
+  defaultValue: string;
+}
+
 export type WorkflowStatus = 'idle' | 'running' | 'paused' | 'error' | 'completed';
