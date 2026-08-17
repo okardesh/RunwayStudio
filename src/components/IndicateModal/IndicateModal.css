@@ -265,6 +265,7 @@
 }
 
 
+.indicate-modal__divider {
   display: flex;
   align-items: center;
   padding: 0 16px;

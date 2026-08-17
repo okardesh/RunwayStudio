@@ -16,7 +16,7 @@ SetCompressor /SOLID zlib
 Name "Runway"
 Icon "icon.ico"
 UninstallIcon "icon.ico"
-OutFile "..\release\Runway Setup ${ARCH} 0.1.0.exe"
+OutFile "..\release\Runway Installer for Windows (${ARCH}).exe"
 InstallDir "$LOCALAPPDATA\Programs\Runway"
 RequestExecutionLevel user
 ShowInstDetails show

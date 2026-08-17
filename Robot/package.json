@@ -44,10 +44,11 @@
       "node_modules/@napi-rs/canvas-win32-arm64-msvc/**"
     ],
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "../build"
     },
     "win": {
-      "icon": "../build/icon.ico",
+      "icon": "icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -60,8 +61,8 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "installerIcon": "../build/icon.ico",
-      "uninstallerIcon": "../build/icon.ico"
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico"
     }
   },
   "optionalDependencies": {

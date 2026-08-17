@@ -298,3 +298,5 @@ webview {
   padding: 5px 16px;
   cursor: pointer;
   transition: background 0.12s;
+}
+.rec-result__use:hover { background: #0E6B0E; }

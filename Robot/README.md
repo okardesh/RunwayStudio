@@ -80,4 +80,4 @@ Build the unified Windows installer from the Studio workspace root:
 npm run package:win
 ```
 
-The build produces `release/Runway Setup x64 0.1.0.exe` and `release/Runway Setup arm64 0.1.0.exe`. Each installer has a component selection page for Studio, Robot, or both applications. Windows 32-bit is not supported because the automation Canvas dependency does not provide a 32-bit native binding.
+The build produces `release/Runway Installer for Windows (x64).exe` and `release/Runway Installer for Windows (arm64).exe`. Each installer has a component selection page for Studio, Robot, or both applications. Windows 32-bit is not supported because the automation Canvas dependency does not provide a 32-bit native binding.
