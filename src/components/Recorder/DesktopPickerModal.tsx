@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import './RecorderModal.css';
 import './DesktopPickerModal.css';
 
@@ -26,8 +26,14 @@ export function DesktopPickerModal({ windowTitle, onSelect, onClose }: DesktopPi
   const [status, setStatus] = useState<Status>('picking');
   const [captured, setCaptured] = useState<Captured | null>(null);
   const [error, setError] = useState('');
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  const inFlight = useRef(false);
+  const mounted = useRef(false);
+  const activeRequest = useRef<string | null>(null);
 
   const startPick = useCallback(() => {
+    if (inFlight.current) return;
     if (!isElectron()) {
       setStatus('error');
       setError('Desktop picking requires the desktop app (not available in browser preview).');
@@ -35,19 +41,36 @@ export function DesktopPickerModal({ windowTitle, onSelect, onClose }: DesktopPi
     }
     setStatus('picking');
     setCaptured(null);
-    (window as any).electronAPI.pickDesktopElement(windowTitle)
+    setError('');
+    inFlight.current = true;
+    const requestId = crypto.randomUUID();
+    activeRequest.current = requestId;
+    (window as any).electronAPI.pickDesktopElement(windowTitle, requestId)
       .then((result: any) => {
-        if (result.cancelled) { onClose(); return; }
+        if (!mounted.current) return;
+        if (result.cancelled) { closeRef.current(); return; }
+        if (!result.selector) throw new Error('No usable element was captured. Try again.');
         setCaptured(result);
         setStatus('ready');
       })
       .catch((e: any) => {
+        if (!mounted.current) return;
         setStatus('error');
         setError(e?.message ?? String(e));
-      });
-  }, [onClose, windowTitle]);
+      }).finally(() => { inFlight.current = false; activeRequest.current = null; });
+  }, [windowTitle]);
 
-  useEffect(() => { startPick(); }, [startPick]);
+  useEffect(() => {
+    mounted.current = true;
+    // StrictMode probes effects twice. Only start after its cleanup has run.
+    let cancelled = false;
+    queueMicrotask(() => { if (!cancelled) startPick(); });
+    return () => {
+      cancelled = true;
+      mounted.current = false;
+      if (activeRequest.current) void (window as any).electronAPI?.cancelDesktopPick?.(activeRequest.current);
+    };
+  }, [startPick]);
 
   return (
     <div className="rec-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>

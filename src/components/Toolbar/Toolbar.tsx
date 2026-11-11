@@ -4,6 +4,9 @@ import { useUiStore } from '../../store/uiStore';
 import { executeWorkflow, requestStop, resumeDebug } from '../../engine/executor';
 import { saveWorkflow, openWorkflow } from '../../engine/fileOps';
 import './Toolbar.css';
+import { createPortal } from 'react-dom';
+import { WorkflowRecorderModal } from '../Recorder/WorkflowRecorderModal';
+import { buildRecordedWorkflow } from '../Recorder/workflowRecording';
 
 interface ToolbarProps {
   activeTab: 'design' | 'debug';
@@ -13,6 +16,7 @@ interface ToolbarProps {
 export function Toolbar({ activeTab, onPublish }: ToolbarProps) {
   const { projectName, status, isDirty, setProjectName, clearWorkflow, nodes } = useWorkflowStore();
   const { activeBottomPanelTab, setActiveBottomPanelTab, setStatusMessage } = useUiStore();
+  const [showRecorder, setShowRecorder] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -96,6 +100,19 @@ export function Toolbar({ activeTab, onPublish }: ToolbarProps) {
 
   return (
     <div className="ribbon">
+      {showRecorder && createPortal(<WorkflowRecorderModal onClose={() => setShowRecorder(false)} onSave={async (steps, logOutputs) => {
+        const before = useWorkflowStore.getState();
+        const recorded = buildRecordedWorkflow(steps, before.variables, logOutputs);
+        useWorkflowStore.setState({ nodes: [...before.nodes, ...recorded.nodes], variables: [...before.variables, ...recorded.variables], isDirty: true, selectedNodeId: recorded.nodes[0].id });
+        try {
+          if (!await saveWorkflow()) throw new Error("Recording was not saved. Choose a file to finish.");
+          setShowRecorder(false);
+          setStatusMessage("Recording saved. Run the workflow to see extracted variables in Output.");
+        } catch (error) {
+          useWorkflowStore.setState({ nodes: before.nodes, variables: before.variables, isDirty: before.isDirty, selectedNodeId: before.selectedNodeId });
+          throw error;
+        }
+      }} />, document.body)}
       <input ref={fileInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleFileChange} />
 
       <div className="ribbon__group">
@@ -131,6 +148,7 @@ export function Toolbar({ activeTab, onPublish }: ToolbarProps) {
                 <span className="rbn-btn__icon rbn-btn__icon--lg">▶</span>
                 <span className="rbn-btn__label">Run</span>
               </button>
+              <button className="rbn-btn" disabled={isRunning} onClick={() => setShowRecorder(true)} title="Record browser actions"><span className="rbn-btn__icon">⏺</span><span className="rbn-btn__label">Record</span></button>
               <button
                 className="rbn-btn rbn-btn--stop"
                 onClick={handleStop}

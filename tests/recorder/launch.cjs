@@ -1,0 +1,23 @@
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawn, execFileSync } = require('node:child_process');
+const sessionSuite = process.argv.includes('--session');
+const destination = fs.mkdtempSync(path.join(os.tmpdir(), 'runway-recorder-tests-'));
+execFileSync(process.execPath, [path.join(__dirname, 'prepare.cjs'), destination, ...(sessionSuite ? ['--session'] : [])], { stdio: 'inherit' });
+if (process.argv.includes('--native')) fs.writeFileSync(path.join(destination, 'native-smoke.flag'), '');
+const env = { ...process.env };
+delete env.ELECTRON_RUN_AS_NODE;
+const child = spawn(require('electron'), [destination], { env, stdio: 'inherit' });
+child.on('error', error => { console.error(error); process.exitCode = 1; });
+child.on('exit', code => {
+  const resultPath = path.join(destination, sessionSuite ? 'session-results.json' : 'results.json');
+  const results = fs.existsSync(resultPath) ? JSON.parse(fs.readFileSync(resultPath, 'utf8')) : [];
+  const failures = results.filter(result => !result.passed);
+  for (const failure of failures) console.error(failure.name + '\n' + failure.error);
+  console.log(`${results.length - failures.length}/${results.length} passed. Results: ${resultPath}`);
+  const fatalPath = path.join(destination, sessionSuite ? 'session-fatal.txt' : 'fatal.txt');
+  const fatal = fs.existsSync(fatalPath) ? fs.readFileSync(fatalPath, 'utf8') : '';
+  if (fatal) console.error(fatal);
+  process.exitCode = code || failures.length || fatal || results.length < (sessionSuite ? 6 : 23) ? 1 : 0;
+});

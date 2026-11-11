@@ -300,3 +300,10 @@ webview {
   transition: background 0.12s;
 }
 .rec-result__use:hover { background: #0E6B0E; }
+
+.rec-error { padding: 10px 14px; color: #a4262c; background: #fdf0f0; flex-shrink: 0; }
+
+.workflow-recorder { width: 1180px; height: 88vh; }
+.session-steps { max-height: 125px; overflow: auto; padding: 8px 14px; font-size: 12px; border-top: 1px solid #ddd; }
+.session-steps div { overflow-wrap: anywhere; padding-top: 3px; }
+.session-footer { padding: 10px 14px; align-items: center; justify-content: space-between; border-top: 1px solid #ddd; }

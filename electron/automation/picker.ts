@@ -25,6 +25,8 @@ function buildPickerScript(windowTitle: string): string {
   const escaped = windowTitle.replace(/'/g, "''");
   const scoped = windowTitle.trim().length > 0;
   return `
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 Add-Type -AssemblyName WindowsBase
@@ -35,6 +37,41 @@ Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
 public class PickerNative {
+  private delegate IntPtr MouseProc(int code, IntPtr message, IntPtr data);
+  private static MouseProc callback = OnMouse;
+  private static MouseProc keyCallback = OnKey;
+  private static IntPtr hook = IntPtr.Zero;
+  private static IntPtr keyHook = IntPtr.Zero;
+  public static bool Clicked;
+  public static bool Cancelled;
+  public static int ClickX, ClickY;
+  [StructLayout(LayoutKind.Sequential)] private struct Point { public int X; public int Y; }
+  [StructLayout(LayoutKind.Sequential)] private struct MouseData { public Point pt; public uint mouseData, flags, time; public UIntPtr extra; }
+  [DllImport("user32.dll", SetLastError=true)] private static extern IntPtr SetWindowsHookEx(int id, MouseProc proc, IntPtr module, uint threadId);
+  [DllImport("user32.dll")] private static extern bool UnhookWindowsHookEx(IntPtr handle);
+  [DllImport("user32.dll")] private static extern IntPtr CallNextHookEx(IntPtr handle, int code, IntPtr message, IntPtr data);
+  [DllImport("kernel32.dll", CharSet=CharSet.Auto)] private static extern IntPtr GetModuleHandle(string name);
+  private static IntPtr OnMouse(int code, IntPtr message, IntPtr data) {
+    if (code >= 0 && message == (IntPtr)0x0201) {
+      var mouse = (MouseData)Marshal.PtrToStructure(data, typeof(MouseData));
+      ClickX = mouse.pt.X; ClickY = mouse.pt.Y; Clicked = true;
+    }
+    return CallNextHookEx(hook, code, message, data);
+  }
+  private static IntPtr OnKey(int code, IntPtr message, IntPtr data) {
+    if (code >= 0 && (message == (IntPtr)0x0100 || message == (IntPtr)0x0104) && Marshal.ReadInt32(data) == 27) Cancelled = true;
+    return CallNextHookEx(keyHook, code, message, data);
+  }
+  public static void StartMouseHook() {
+    hook = SetWindowsHookEx(14, callback, GetModuleHandle(null), 0);
+    if (hook == IntPtr.Zero) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+    keyHook = SetWindowsHookEx(13, keyCallback, GetModuleHandle(null), 0);
+    if (keyHook == IntPtr.Zero) { StopMouseHook(); throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()); }
+  }
+  public static void StopMouseHook() {
+    if (hook != IntPtr.Zero) { UnhookWindowsHookEx(hook); hook = IntPtr.Zero; }
+    if (keyHook != IntPtr.Zero) { UnhookWindowsHookEx(keyHook); keyHook = IntPtr.Zero; }
+  }
   [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int vKey);
   [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
   [DllImport("user32.dll")] public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
@@ -54,6 +91,7 @@ $scoped = ${scoped ? '$true' : '$false'}
 if ($scoped) {
   $wndCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, $targetWindow)
   $targetWnd = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, $wndCond)
+  if ($targetWnd -eq $null) { throw "The selected application window is no longer available." }
   if ($targetWnd -ne $null) {
     try {
       $wp = $targetWnd.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern)
@@ -86,7 +124,9 @@ function Set-HighlightRect($rect) {
   $region = New-Object System.Drawing.Region($outer)
   $region.Exclude($inner)
   $highlight.Bounds = New-Object System.Drawing.Rectangle([int]$rect.X, [int]$rect.Y, $w, $h)
+  $previousRegion = $highlight.Region
   $highlight.Region = $region
+  if ($previousRegion -ne $null) { $previousRegion.Dispose() }
 }
 
 function Get-WindowAncestorTitle($el) {
@@ -105,14 +145,16 @@ function Get-WindowAncestorTitle($el) {
 
 $result = $null
 $lastEl = $null
-$wasDown = $false
 $wasEsc = $false
 $deadline = (Get-Date).AddSeconds(120)
 
+[PickerNative]::StartMouseHook()
+try {
 while ($true) {
   Start-Sleep -Milliseconds 25
   [System.Windows.Forms.Application]::DoEvents()
 
+  if ([PickerNative]::Cancelled) { break }
   if ((Get-Date) -gt $deadline) { break }
 
   $esc = ([PickerNative]::GetAsyncKeyState([PickerNative]::VK_ESCAPE) -band 0x8000) -ne 0
@@ -120,6 +162,11 @@ while ($true) {
   $wasEsc = $esc
 
   $pt = [System.Windows.Forms.Cursor]::Position
+  $clicked = [PickerNative]::Clicked
+  if ($clicked) {
+    $pt = New-Object System.Drawing.Point([PickerNative]::ClickX, [PickerNative]::ClickY)
+    [PickerNative]::Clicked = $false
+  }
   $auPt = New-Object System.Windows.Point($pt.X, $pt.Y)
   try { $el = [System.Windows.Automation.AutomationElement]::FromPoint($auPt) } catch { $el = $null }
 
@@ -137,8 +184,7 @@ while ($true) {
     $highlight.Bounds = New-Object System.Drawing.Rectangle(-10, -10, 1, 1)
   }
 
-  $down = ([PickerNative]::GetAsyncKeyState([PickerNative]::VK_LBUTTON) -band 0x8000) -ne 0
-  if ($down -and -not $wasDown -and $inScope -and $lastEl -ne $null) {
+  if ($clicked -and $inScope -and $lastEl -ne $null) {
     $c = $lastEl.Current
     $ctName = $c.ControlType.ProgrammaticName -replace '^ControlType\\.',''
     $result = @{
@@ -150,10 +196,12 @@ while ($true) {
     }
     break
   }
-  $wasDown = $down
 }
-
-$highlight.Close()
+} finally {
+  [PickerNative]::StopMouseHook()
+  $highlight.Close()
+  $highlight.Dispose()
+}
 
 if ($result -eq $null) {
   Write-Output '{"cancelled":true}'
@@ -165,6 +213,7 @@ if ($result -eq $null) {
 
 function buildSelector(r: { windowTitle?: string; automationId?: string; name?: string; controlType?: string; className?: string }): string {
   const window = r.windowTitle ?? '';
+  if (r.controlType === 'Window') return `window:${window}`;
   if (r.automationId) return `window:${window} > automationId:${r.automationId}`;
   if (r.name && r.controlType) return `window:${window} > controlType:${r.controlType},name:${r.name}`;
   if (r.name) return `window:${window} > name:${r.name}`;
@@ -172,18 +221,20 @@ function buildSelector(r: { windowTitle?: string; automationId?: string; name?: 
   return `window:${window}`;
 }
 
-export async function pickDesktopElement(windowTitle = ''): Promise<PickedElement> {
+export async function pickDesktopElement(windowTitle = '', signal?: AbortSignal): Promise<PickedElement> {
+  if (signal?.aborted) return { cancelled: true };
   const tmpFile = path.join(os.tmpdir(), `rpa-picker-${Date.now()}-${Math.floor(Math.random() * 1e6)}.ps1`);
   fs.writeFileSync(tmpFile, buildPickerScript(windowTitle), { encoding: 'utf8' });
 
   try {
     const stdout = await new Promise<string>((resolve, reject) => {
-      const child = spawn('powershell', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', tmpFile], {
+      const child = spawn('powershell', ['-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-File', tmpFile], {
         windowsHide: true,
+        signal,
       });
       let out = '';
       let err = '';
-      const killTimer = setTimeout(() => child.kill(), 125_000);
+      const killTimer = setTimeout(() => { child.kill(); reject(new Error('Element picking timed out. Try again.')); }, 125_000);
       child.stdout.on('data', (d) => { out += d.toString(); });
       child.stderr.on('data', (d) => { err += d.toString(); });
       child.on('error', (e) => { clearTimeout(killTimer); reject(e); });
@@ -208,6 +259,9 @@ export async function pickDesktopElement(windowTitle = ''): Promise<PickedElemen
     };
     picked.selector = buildSelector(picked);
     return picked;
+  } catch (error) {
+    if (signal?.aborted) return { cancelled: true };
+    throw error;
   } finally {
     fs.unlink(tmpFile, () => {});
   }

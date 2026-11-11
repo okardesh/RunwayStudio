@@ -11,8 +11,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       thumbnail: string;
       appIcon: string | null;
     }>>,
-  pickDesktopElement: (windowTitle?: string) =>
-    ipcRenderer.invoke('pick-desktop-element', windowTitle) as Promise<{
+  cancelDesktopPick: (requestId: string) => ipcRenderer.invoke('cancel-desktop-pick', requestId),
+  pickDesktopElement: (windowTitle?: string, requestId?: string) =>
+    ipcRenderer.invoke('pick-desktop-element', windowTitle, requestId) as Promise<{
       cancelled: boolean;
       windowTitle?: string;
       name?: string;

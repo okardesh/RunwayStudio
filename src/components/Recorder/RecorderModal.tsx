@@ -1,58 +1,11 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react';
 import './RecorderModal.css';
+import { recorderScript, stopRecorderScript } from './recorderScript';
 
 interface RecorderModalProps {
   onSelect: (selector: string) => void;
   onClose: () => void;
 }
-
-// Injected into the target page to highlight and capture elements
-const INJECT_SCRIPT = `(function() {
-  if (window.__recorderActive) return;
-  window.__recorderActive = true;
-
-  const ov = document.createElement('div');
-  ov.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;box-sizing:border-box;outline:3px solid #FF6B35;outline-offset:1px;border-radius:2px;transition:top .08s,left .08s,width .08s,height .08s;';
-  document.body.appendChild(ov);
-
-  function buildSelector(el) {
-    if (!el || el === document.body) return 'body';
-    if (el.id && /^[a-zA-Z_-]/.test(el.id)) return '#' + el.id;
-    const parts = [];
-    let cur = el;
-    while (cur && cur.nodeType === 1 && cur !== document.documentElement) {
-      let part = cur.tagName.toLowerCase();
-      if (cur.id && /^[a-zA-Z_-]/.test(cur.id)) { parts.unshift('#' + cur.id); break; }
-      const name = cur.getAttribute('name') || cur.getAttribute('data-testid') || cur.getAttribute('aria-label');
-      if (name) { part += '[name="' + name + '"]'; }
-      else if (cur.className) {
-        const cls = [...cur.classList].filter(c => !/active|hover|focus|selected|disabled/.test(c)).slice(0, 2);
-        if (cls.length) part += '.' + cls.join('.');
-      }
-      if (cur.parentElement) {
-        const sibs = [...cur.parentElement.children].filter(c => c.tagName === cur.tagName);
-        if (sibs.length > 1) part += ':nth-of-type(' + (sibs.indexOf(cur) + 1) + ')';
-      }
-      parts.unshift(part);
-      cur = cur.parentElement;
-    }
-    return parts.slice(-5).join(' > ');
-  }
-
-  document.addEventListener('mouseover', e => {
-    const r = e.target.getBoundingClientRect();
-    Object.assign(ov.style, { left:r.left+'px', top:r.top+'px', width:r.width+'px', height:r.height+'px', display:'block', outline:'3px solid #FF6B35' });
-  }, true);
-
-  document.addEventListener('click', e => {
-    e.preventDefault(); e.stopImmediatePropagation();
-    ov.style.outline = '3px solid #43A047';
-    const s = buildSelector(e.target);
-    const tag = e.target.tagName.toLowerCase();
-    const txt = (e.target.textContent || '').trim().replace(/\\s+/g,' ').slice(0, 80);
-    console.log('__REC__:' + JSON.stringify({ selector: s, tag, text: txt }));
-  }, true);
-})()`;
 
 export function RecorderModal({ onSelect, onClose }: RecorderModalProps) {
   const webviewRef = useRef<any>(null);
@@ -62,61 +15,129 @@ export function RecorderModal({ onSelect, onClose }: RecorderModalProps) {
   const [canBack, setCanBack] = useState(false);
   const [canFwd, setCanFwd] = useState(false);
 
-  // Attach webview events once on mount — avoids race condition with did-finish-load
+  const [error, setError] = useState('');
+  const activeToken = useRef<string | null>(null);
+  const requestId = useRef(0);
+  const guestReady = useRef(false);
+  const guestAttached = useRef(false);
+  const navigationId = useRef(0);
+
+  const stopPicking = useCallback(() => {
+    activeToken.current = null;
+    requestId.current++;
+    if (guestReady.current) void webviewRef.current?.executeJavaScript(stopRecorderScript).catch(() => {});
+  }, []);
+
   useEffect(() => {
     const wv = webviewRef.current;
     if (!wv) return;
+    let mounted = true;
+    const updateNavigation = () => {
+      if (!mounted || !guestReady.current) return;
+      setCanBack(wv.canGoBack());
+      setCanFwd(wv.canGoForward());
 
-    const onConsole = (e: any) => {
-      const msg: string = e.message ?? '';
-      if (!msg.startsWith('__REC__:')) return;
+    };
+    const onConsole = (event: any) => {
+      if (!event.message?.startsWith('__REC__:') || !activeToken.current) return;
       try {
-        const data = JSON.parse(msg.slice(8));
-        setCaptured(data);
+        const data = JSON.parse(event.message.slice(8));
+        if (data.token !== activeToken.current) return;
+        if (!data.cancelled && (typeof data.selector !== 'string' || !data.selector || typeof data.tag !== 'string' || typeof data.text !== 'string')) return;
+        activeToken.current = null;
+        requestId.current++;
+        setCaptured(data.cancelled ? null : data);
         setStatus('ready');
-      } catch { /* ignore */ }
+      } catch { /* Ignore unrelated page console messages. */ }
     };
-
+    const onNavigate = (event: any) => {
+      updateNavigation();
+      if (/^https?:/i.test(event.url)) setInputUrl(event.url);
+    };
+    const onDomReady = () => { guestAttached.current = true; guestReady.current = true; updateNavigation(); };
     const onReady = () => {
+      if (!guestReady.current || wv.isLoading()) return;
+      updateNavigation();
+      setStatus(current => current === 'recording' ? current : 'ready');
+    };
+    const onStart = () => {
+      stopPicking();
+      guestReady.current = false;
+      setCaptured(null);
+      setError('');
+      setStatus('loading');
+    };
+    const onFail = (event: any) => {
+      if (event.isMainFrame === false || event.errorCode === -3) return;
+      stopPicking();
+      setCaptured(null);
+      setError('Page could not be loaded: ' + (event.errorDescription || 'unknown error'));
       setStatus('ready');
-      setCanBack(wv.canGoBack?.() ?? false);
-      setCanFwd(wv.canGoForward?.() ?? false);
-      setInputUrl(wv.getURL?.() ?? '');
     };
-
-    const onStart = () => setStatus('loading');
-    const onFail  = () => setStatus('ready');
-
-    wv.addEventListener('console-message', onConsole);
-    wv.addEventListener('did-finish-load', onReady);
-    wv.addEventListener('did-stop-loading', onReady); // fallback — fires even when did-finish-load doesn't
-    wv.addEventListener('did-start-loading', onStart);
-    wv.addEventListener('did-fail-load', onFail);
-
+    const onGone = () => {
+      guestReady.current = false;
+      stopPicking();
+      setCaptured(null);
+      setError('The page stopped responding. Reload it to continue.');
+      setStatus('ready');
+    };
+    const events: Record<string, (event: any) => void> = {
+      'console-message': onConsole, 'dom-ready': onDomReady,
+      'did-finish-load': onReady, 'did-stop-loading': onReady,
+      'did-start-loading': onStart, 'did-fail-load': onFail,
+      'did-navigate': onNavigate, 'did-navigate-in-page': onNavigate, 'render-process-gone': onGone,
+    };
+    Object.entries(events).forEach(([name, listener]) => wv.addEventListener(name, listener));
     return () => {
-      wv.removeEventListener('console-message', onConsole);
-      wv.removeEventListener('did-finish-load', onReady);
-      wv.removeEventListener('did-stop-loading', onReady);
-      wv.removeEventListener('did-start-loading', onStart);
-      wv.removeEventListener('did-fail-load', onFail);
+      mounted = false;
+      navigationId.current++;
+      stopPicking();
+      guestReady.current = false;
+      Object.entries(events).forEach(([name, listener]) => wv.removeEventListener(name, listener));
     };
-  }, []);
+  }, [stopPicking]);
 
   const handleLoad = useCallback(() => {
-    const url = /^https?:\/\//.test(inputUrl) ? inputUrl : 'https://' + inputUrl;
-    setInputUrl(url);
-    setCaptured(null);
-    setStatus('loading');
-    webviewRef.current?.loadURL(url);
-  }, [inputUrl]);
+    try {
+      const value = inputUrl.trim();
+      const url = new URL(/^[a-z][a-z0-9+.-]*:/i.test(value) ? value : 'https://' + value);
+      if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Enter an HTTP or HTTPS address.');
+      stopPicking();
+      setInputUrl(url.href);
+      setCaptured(null);
+      setError('');
+      setStatus('loading');
+      const id = ++navigationId.current;
+      const wv = webviewRef.current;
+      // A new webview cannot use loadURL until its initial dom-ready event.
+      if (!guestAttached.current) { wv?.setAttribute('src', url.href); return; }
+      void wv?.loadURL(url.href).catch((cause: Error) => {
+        if (navigationId.current !== id || cause.message.includes('ERR_ABORTED')) return;
+        setError(cause.message);
+        setStatus('ready');
+      });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Enter a valid URL.');
+    }
+  }, [inputUrl, stopPicking]);
 
   const startRecording = useCallback(() => {
     const wv = webviewRef.current;
-    if (!wv) return;
-    wv.executeJavaScript(INJECT_SCRIPT)
-      .then(() => setStatus('recording'))
-      .catch(console.error);
-  }, []);
+    if (!wv || !guestReady.current) return;
+    stopPicking();
+    const id = ++requestId.current;
+    const token = crypto.randomUUID();
+    activeToken.current = token;
+    setCaptured(null);
+    setError('');
+    setStatus('recording');
+    void wv.executeJavaScript(recorderScript(token)).catch((cause: Error) => {
+      if (requestId.current !== id) return;
+      activeToken.current = null;
+      setStatus('ready');
+      setError('Could not start picking: ' + cause.message);
+    });
+  }, [stopPicking]);
 
   return (
     <div className="rec-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -146,17 +167,20 @@ export function RecorderModal({ onSelect, onClose }: RecorderModalProps) {
           <button
             className={`rec-nav__record${status === 'recording' ? ' active' : ''}`}
             disabled={status === 'idle' || status === 'loading'}
-            onClick={startRecording}
+            onClick={() => { if (status === 'recording') { stopPicking(); setStatus('ready'); } else startRecording(); }}
           >
-            {status === 'recording' ? '⏺ Recording…' : '🎯 Pick Element'}
+            {status === 'recording' ? '■ Stop Picking' : '🎯 Pick Element'}
           </button>
         </div>
+
+        {error && <div role="alert" className="rec-error">{error}</div>}
 
         {/* Viewport — webview always rendered so Electron load events fire correctly */}
         <div className="rec-viewport">
           {/* @ts-ignore — webview is Electron-only */}
           <webview
             ref={webviewRef}
+            src="about:blank"
             style={{ width: '100%', height: '100%', display: 'flex' }}
           />
 
@@ -170,7 +194,7 @@ export function RecorderModal({ onSelect, onClose }: RecorderModalProps) {
 
           {status === 'recording' && (
             <div className="rec-recording-hint">
-              🎯 Click any element on the page to capture its selector
+              🎯 Click an element to capture its selector. Press Esc to cancel.
             </div>
           )}
 

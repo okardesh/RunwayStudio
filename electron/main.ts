@@ -147,13 +147,27 @@ app.whenReady().then(() => {
 
   // Point-and-click desktop element picker — minimizes the app so the target
   // window is reachable, then restores it once an element is captured/cancelled.
-  ipcMain.handle('pick-desktop-element', async (_e, windowTitle?: string) => {
+  let activePicker: { controller: AbortController; requestId: string; senderId: number } | null = null;
+  ipcMain.handle('cancel-desktop-pick', (event, requestId: string) => {
+    if (activePicker?.senderId === event.sender.id && activePicker.requestId === requestId) activePicker.controller.abort();
+  });
+  ipcMain.handle('pick-desktop-element', async (event, windowTitle?: string, requestId = '') => {
+    if (activePicker) throw new Error('An element picker is already running. Cancel it before starting another.');
+    const picker = { controller: new AbortController(), requestId, senderId: event.sender.id };
+    activePicker = picker;
+    const cancel = () => picker.controller.abort();
+    event.sender.once('destroyed', cancel);
+    event.sender.once('render-process-gone', cancel);
+    win?.once('closed', cancel);
     win?.minimize();
     try {
-      return await pickDesktopElement(windowTitle ?? '');
+      return await pickDesktopElement(windowTitle ?? '', picker.controller.signal);
     } finally {
-      win?.restore();
-      win?.focus();
+      event.sender.removeListener('destroyed', cancel);
+      event.sender.removeListener('render-process-gone', cancel);
+      win?.removeListener('closed', cancel);
+      activePicker = null;
+      if (win && !win.isDestroyed()) { win.restore(); win.focus(); }
     }
   });
 
