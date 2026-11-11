@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { LicenseRequest, LicenseTransportResult } from '../src/shared/runwayLicenseTransport'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
@@ -32,6 +33,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     >,
   getDotNetTypes: () => ipcRenderer.invoke('get-dotnet-types') as Promise<string[]>,
   getRunwayApiKey: (serverUrl: string) => ipcRenderer.invoke('runway:get-api-key', serverUrl) as Promise<string | null>,
+  requestRunwayLicense: (request: LicenseRequest) => ipcRenderer.invoke('runway:license-request', request) as Promise<LicenseTransportResult>,
   storeRunwayApiKey: (serverUrl: string, apiKey: string) => ipcRenderer.invoke('runway:store-api-key', serverUrl, apiKey) as Promise<boolean>,
   deleteRunwayApiKey: (serverUrl: string) => ipcRenderer.invoke('runway:delete-api-key', serverUrl) as Promise<void>,
   publishRunwayWorkflow: (url: string, apiKey: string, tenantId: string, payload: unknown) => ipcRenderer.invoke('runway:publish-workflow', { url, apiKey, tenantId, payload }) as Promise<{ networkError: boolean; status: number; body: string }>,

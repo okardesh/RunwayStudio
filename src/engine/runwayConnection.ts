@@ -1,3 +1,5 @@
+import { normalizeRunwayServerUrl, postLicenseRequest, type LicenseAction, type LicenseRequest, type LicenseTransportResult } from '../shared/runwayLicenseTransport';
+
 const SERVER_URL_KEY = 'runway.studio.serverUrl';
 const INSTALLATION_ID_KEY = 'runway.studio.installationId';
 const REGISTERED_SERVER_URL_KEY = 'runway.studio.registeredServerUrl';
@@ -53,20 +55,12 @@ export function clearSavedConnection() {
   localStorage.removeItem(SERVER_URL_KEY);
 }
 
-function normalizeUrl(value: string) {
-  const url = value.trim().replace(/\/+$/, '');
-  if (!/^https?:\/\//i.test(url)) throw new Error('Enter a server URL beginning with http:// or https://.');
-  return url;
-}
-
-async function readResponse(response: Response): Promise<LicenseResponse> {
-  const text = await response.text();
-  try { return text ? JSON.parse(text) as LicenseResponse : {}; }
-  catch {
-    // Do not retry a successful request just because its response was malformed.
-    console.warn('Runway returned an unparseable license response:', text.replace(/("(?:apiKey|accessToken|token)"\s*:\s*")[^"]*/gi, '$1[redacted]'));
-    return { message: 'Runway returned an unparseable license response.' };
-  }
+function readResponse(result: LicenseTransportResult): LicenseResponse {
+  try {
+    const value: unknown = result.body ? JSON.parse(result.body) : {};
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid license response');
+    return value as LicenseResponse;
+  } catch { throw new Error('Runway returned an invalid license response (HTTP ' + result.status + '). Check the server address and license API.'); }
 }
 
 function hasDeveloperAccess(payload: LicenseResponse) {
@@ -86,22 +80,16 @@ function secureStore() {
   return api?.getRunwayApiKey && api?.storeRunwayApiKey ? api : null;
 }
 
-async function requestLicense(serverUrl: string, deviceName: string, action: 'register' | 'heartbeat') {
-  const response = await fetch(`${serverUrl}/api/license/${action}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Tenant-Id': ORGANIZATION_ID },
-    body: JSON.stringify({
-      organizationId: ORGANIZATION_ID,
-      clientType: CLIENT_TYPE,
-      deviceName,
-      ...(action === 'register' ? { consume: true } : {}),
-    }),
-  });
-  return { response, payload: await readResponse(response) };
+async function requestLicense(serverUrl: string, name: string, action: LicenseAction, organizationId = ORGANIZATION_ID) {
+  const request: LicenseRequest = { serverUrl, deviceName: name, action, organizationId };
+  const bridge = (window as any).electronAPI?.requestRunwayLicense as undefined | ((request: LicenseRequest) => Promise<LicenseTransportResult>);
+  const result = bridge ? await bridge(request) : await postLicenseRequest(request);
+  if (result.error) throw new Error(result.error.message);
+  return { response: { ok: result.status >= 200 && result.status < 300, status: result.status }, payload: readResponse(result) };
 }
 
 async function createConnection(input: string): Promise<RunwayConnection> {
-  const serverUrl = normalizeUrl(input);
+  const serverUrl = normalizeRunwayServerUrl(input);
   // Keep the last valid address available when the server is temporarily offline.
   localStorage.setItem(SERVER_URL_KEY, serverUrl);
   const id = installationId();
@@ -131,7 +119,7 @@ async function createConnection(input: string): Promise<RunwayConnection> {
   if (!accessToken) {
     throw new Error('Runway confirmed the license but did not issue an API key. Studio cannot publish workflows until Runway publishing access is configured.');
   }
-  if (!isRegistered) {
+  if (!isRegistered || action === 'register') {
     localStorage.setItem(REGISTERED_SERVER_URL_KEY, serverUrl);
     localStorage.setItem(REGISTRATION_PROTOCOL_KEY, REGISTRATION_PROTOCOL_VERSION);
   }
@@ -156,13 +144,7 @@ export function connectToRunwayServer(input: string): Promise<RunwayConnection> 
 }
 
 async function licenseRequest(connection: RunwayConnection, action: 'heartbeat' | 'release') {
-  const response = await fetch(`${connection.serverUrl}/api/license/${action}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Tenant-Id': connection.organizationId },
-    body: JSON.stringify({ organizationId: connection.organizationId, clientType: connection.clientType, deviceName: connection.deviceName }),
-    keepalive: action === 'release',
-  });
-  const payload = await readResponse(response);
+  const { response, payload } = await requestLicense(connection.serverUrl, connection.deviceName, action, connection.organizationId);
   if (!response.ok || payload.ok !== true) throw new Error(payload.message ?? payload.error ?? `License ${action} failed (${response.status}).`);
 }
 

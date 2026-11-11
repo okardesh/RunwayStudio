@@ -6,6 +6,7 @@ import fs from 'node:fs'
 import { execFile } from 'node:child_process'
 import { executeActivity } from './automation/index.js'
 import { pickDesktopElement } from './automation/picker.js'
+import { registerRunwayLicenseIpc } from './runwayLicenseIpc'
 
 const _require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -83,6 +84,7 @@ app.on('activate', () => {
 })
 
 app.whenReady().then(() => {
+  registerRunwayLicenseIpc(ipcMain, () => win?.webContents);
   ipcMain.handle('runway:get-api-key', (_event, serverUrl: string) => {
     if (!safeStorage.isEncryptionAvailable()) return null;
     const encrypted = readCredentials()[serverUrl];

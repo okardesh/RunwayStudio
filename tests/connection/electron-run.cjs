@@ -1,0 +1,26 @@
+const {app,BrowserWindow,ipcMain}=require('electron');
+const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
+const {registerRunwayLicenseIpc}=require('./license-ipc.cjs');
+app.setPath('userData',path.join(__dirname,'profile-'+process.pid));
+const results=[],requests=[],sockets=new Set(),keys=new Map();let win,server,rendererServer,url,mode='ok';
+const pause=ms=>new Promise(r=>setTimeout(r,ms));const evalUI=script=>win.webContents.executeJavaScript(script);
+async function until(script,timeout=5000){const deadline=Date.now()+timeout;while(Date.now()<deadline){if(await evalUI(script))return;await pause(40);}throw Error('Timed out: '+script);}
+async function test(name,fn){try{await fn();results.push({name,passed:true});}catch(e){results.push({name,passed:false,error:String(e.stack||e)});}fs.writeFileSync(path.join(__dirname,'electron-results.json'),JSON.stringify(results,null,2));}
+app.whenReady().then(async()=>{
+ server=http.createServer(async(req,res)=>{let body='';for await(const chunk of req)body+=chunk;requests.push({method:req.method,path:req.url});if(mode==='hang')return;res.setHeader('Content-Type','application/json');if(req.method==='OPTIONS'){res.end('{}');return;}res.end(JSON.stringify({ok:true,authenticated:true,canUseDevelopers:true,apiKey:'electron-fixture-key'}));});server.on('connection',s=>{sockets.add(s);s.on('close',()=>sockets.delete(s));});await new Promise(r=>server.listen(0,'127.0.0.1',r));url='http://127.0.0.1:'+server.address().port;
+ registerRunwayLicenseIpc(ipcMain,()=>win?.webContents);
+ ipcMain.handle('runway:get-api-key',(_e,u)=>keys.get(u)??null);ipcMain.handle('runway:store-api-key',(_e,u,k)=>{keys.set(u,k);return true;});
+ win=new BrowserWindow({width:950,height:800,title:'Runway Connection Tests',webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false}});
+ const load=()=>win.loadFile(path.join(__dirname,'index.html'),{query:{server:url}});
+ await load();
+ rendererServer=http.createServer((_req,res)=>{res.setHeader('Content-Type','text/html');res.end('<title>Renderer CORS fixture</title>');});await new Promise(r=>rendererServer.listen(0,'127.0.0.1',r));
+ await test('Cross-origin renderer reproduces Failed to fetch without API CORS headers',async()=>{requests.length=0;await win.loadURL('http://127.0.0.1:'+rendererServer.address().port);const failed=await evalUI(`fetch(${JSON.stringify(url+'/api/license/register')},{method:'POST',headers:{'Content-Type':'application/json','X-Tenant-Id':'default'},body:'{}'}).then(()=>false).catch(e=>e.message==='Failed to fetch')`);assert.equal(failed,true);assert.equal(requests.filter(r=>r.method==='POST').length,0);});
+ await load();
+ await test('Production preload and IPC connect the real ConnectionAssistant without CORS preflight',async()=>{requests.length=0;await evalUI('mountConnection();true');await until('connectionOutcome!==null');assert.equal(requests.filter(r=>r.method==='POST'&&r.path==='/api/license/register').length,1);assert.equal(requests.filter(r=>r.method==='OPTIONS').length,0);assert.equal(keys.get(url),'electron-fixture-key');});
+ await test('Heartbeat and release work from the renderer through production IPC',async()=>{requests.length=0;await evalUI('heartbeat()');await evalUI('release()');assert.deepEqual(requests.map(r=>r.path),['/api/license/heartbeat','/api/license/release']);});
+ await test('An unrelated window cannot use the privileged license transport',async()=>{const other=new BrowserWindow({show:false,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false}});try{await other.loadURL('data:text/html,untrusted-test-window');const count=requests.length;const r=await other.webContents.executeJavaScript(`electronAPI.requestRunwayLicense({serverUrl:${JSON.stringify(url)},action:'register',organizationId:'default',deviceName:'untrusted-fixture'})`);assert.equal(r.error.code,'UNTRUSTED_SENDER');assert.equal(requests.length,count);}finally{other.destroy();}});
+ await test('A real 10-second timeout shows a useful error and re-enables the connection form',async()=>{mode='hang';await load();await evalUI('mountConnection();true');await until(`document.querySelector('[role="alert"]')?.textContent.includes('did not respond within 10 seconds')`,13000);assert.equal(await evalUI('document.querySelector("input").disabled'),false);assert.equal(await evalUI('document.querySelector("button").disabled'),false);});
+ await test('Retry after the timeout connects without restarting Studio',async()=>{mode='ok';await evalUI('document.querySelector("button").click();true');await until('connectionOutcome!==null');});
+ fs.writeFileSync(path.join(__dirname,'electron-summary.json'),JSON.stringify({scenarios:results.length,passed:results.filter(r=>r.passed).length,failed:results.filter(r=>!r.passed).length},null,2));
+ for(const s of sockets)s.destroy();server.close();rendererServer.close();win.destroy();app.exit(results.some(r=>!r.passed)?1:0);
+}).catch(e=>{fs.writeFileSync(path.join(__dirname,'electron-fatal.txt'),String(e.stack||e));for(const s of sockets)s.destroy();server?.close();rendererServer?.close();app.exit(1);});
