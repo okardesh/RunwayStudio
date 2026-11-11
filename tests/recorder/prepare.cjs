@@ -6,6 +6,7 @@ fs.mkdirSync(destination, { recursive: true });
 esbuild.buildSync({ entryPoints: [path.join(__dirname, 'renderer.tsx')], bundle: true, outfile: path.join(destination, 'renderer.js'), platform: 'browser', jsx: 'automatic' });
 esbuild.buildSync({ entryPoints: [path.resolve('src/components/Recorder/recorderScript.ts')], bundle: true, outfile: path.join(destination, 'recorder-script.cjs'), platform: 'node', format: 'cjs' });
 esbuild.buildSync({ entryPoints: [path.resolve('electron/automation/picker.ts')], bundle: true, outfile: path.join(destination, 'desktop-picker.cjs'), platform: 'node', format: 'cjs' });
+esbuild.buildSync({ entryPoints: [path.resolve('electron/automation/desktop.ts')], bundle: true, outfile: path.join(destination, 'desktop-engine.cjs'), platform: 'node', format: 'cjs' });
 fs.writeFileSync(path.join(destination, 'index.html'), '<!doctype html><html><head><link rel="stylesheet" href="renderer.css"></head><body><div id="root"></div><script src="renderer.js"></script></body></html>');
 fs.copyFileSync(path.join(__dirname, 'run.cjs'), path.join(destination, 'main.cjs'));
 fs.writeFileSync(path.join(destination, 'package.json'), JSON.stringify({ name: 'runway-recorder-tests', main: 'main.cjs' }));
@@ -13,6 +14,7 @@ const compiler = path.join(process.env.WINDIR || 'C:/Windows', 'Microsoft.NET/Fr
 if (fs.existsSync(compiler)) require('node:child_process').execFileSync(compiler,
   ['/nologo', '/target:winexe', '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll', '/out:' + path.join(destination, 'native-fixture.exe'), path.join(__dirname, 'NativeFixture.cs')], { stdio: 'inherit' });
 console.log(destination);
+if (process.argv.includes('--chromium')) fs.copyFileSync(path.join(__dirname,'chromium-run.cjs'),path.join(destination,'main.cjs'));
 
 if (process.argv.includes('--session')) {
   fs.copyFileSync(path.join(__dirname, 'session-run.cjs'), path.join(destination, 'main.cjs'));

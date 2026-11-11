@@ -22,6 +22,20 @@ for failures. Desktop React tests use a controlled IPC substitute; native smoke
 tests separately exercise the actual PowerShell/UIA picker. These tests do not
 cover server licensing, workflow persistence, or playback against customer apps.
 
+Run `npm run test:recorder -- --chromium` for the Chromium native-picker regression.
+The fixture deliberately starts without a force-accessibility switch. Click its
+Approve button, then the Search address input, then the Open details link as each
+picker starts. Finally press Escape. Each captured role is checked and the real
+desktop executor replays the selector: button invocation, Unicode text entry,
+value retrieval, and link text retrieval. The window title and button label
+include selector delimiters, quotes, and Turkish characters. A 120-second timeout
+is a failure, and the Escape test checks its cancellation reason.
+
+Chromium controls returned by the MSAA fallback use a base64-encoded `msaa:`
+selector containing their role and accessible name. Replay searches the scoped
+window using the same accessibility tree and rejects ambiguous matches. Existing
+UIA selectors remain supported.
+
 ## Workflow recording
 
 Use **Design → Record** to record an entire browser workflow. Click Start Recording,

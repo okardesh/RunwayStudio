@@ -7,6 +7,7 @@
  * cancels). Output is a single JSON line on stdout.
  */
 import { spawn } from 'node:child_process';
+import { PICKER_NATIVE_CSHARP } from './pickerNativeScript';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -33,58 +34,12 @@ Add-Type -AssemblyName WindowsBase
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-Add-Type -TypeDefinition @"
-using System;
-using System.Runtime.InteropServices;
-public class PickerNative {
-  private delegate IntPtr MouseProc(int code, IntPtr message, IntPtr data);
-  private static MouseProc callback = OnMouse;
-  private static MouseProc keyCallback = OnKey;
-  private static IntPtr hook = IntPtr.Zero;
-  private static IntPtr keyHook = IntPtr.Zero;
-  public static bool Clicked;
-  public static bool Cancelled;
-  public static int ClickX, ClickY;
-  [StructLayout(LayoutKind.Sequential)] private struct Point { public int X; public int Y; }
-  [StructLayout(LayoutKind.Sequential)] private struct MouseData { public Point pt; public uint mouseData, flags, time; public UIntPtr extra; }
-  [DllImport("user32.dll", SetLastError=true)] private static extern IntPtr SetWindowsHookEx(int id, MouseProc proc, IntPtr module, uint threadId);
-  [DllImport("user32.dll")] private static extern bool UnhookWindowsHookEx(IntPtr handle);
-  [DllImport("user32.dll")] private static extern IntPtr CallNextHookEx(IntPtr handle, int code, IntPtr message, IntPtr data);
-  [DllImport("kernel32.dll", CharSet=CharSet.Auto)] private static extern IntPtr GetModuleHandle(string name);
-  private static IntPtr OnMouse(int code, IntPtr message, IntPtr data) {
-    if (code >= 0 && message == (IntPtr)0x0201) {
-      var mouse = (MouseData)Marshal.PtrToStructure(data, typeof(MouseData));
-      ClickX = mouse.pt.X; ClickY = mouse.pt.Y; Clicked = true;
-    }
-    return CallNextHookEx(hook, code, message, data);
-  }
-  private static IntPtr OnKey(int code, IntPtr message, IntPtr data) {
-    if (code >= 0 && (message == (IntPtr)0x0100 || message == (IntPtr)0x0104) && Marshal.ReadInt32(data) == 27) Cancelled = true;
-    return CallNextHookEx(keyHook, code, message, data);
-  }
-  public static void StartMouseHook() {
-    hook = SetWindowsHookEx(14, callback, GetModuleHandle(null), 0);
-    if (hook == IntPtr.Zero) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
-    keyHook = SetWindowsHookEx(13, keyCallback, GetModuleHandle(null), 0);
-    if (keyHook == IntPtr.Zero) { StopMouseHook(); throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()); }
-  }
-  public static void StopMouseHook() {
-    if (hook != IntPtr.Zero) { UnhookWindowsHookEx(hook); hook = IntPtr.Zero; }
-    if (keyHook != IntPtr.Zero) { UnhookWindowsHookEx(keyHook); keyHook = IntPtr.Zero; }
-  }
-  [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int vKey);
-  [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
-  [DllImport("user32.dll")] public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
-  public const int VK_LBUTTON = 0x01;
-  public const int VK_ESCAPE = 0x1B;
-  public const int GWL_EXSTYLE = -20;
-  public const int WS_EX_TRANSPARENT = 0x20;
-  public const int WS_EX_LAYERED = 0x80;
-  public const int WS_EX_NOACTIVATE = 0x08000000;
-}
+Add-Type -ReferencedAssemblies @('System.dll', 'System.Core.dll', (Join-Path ([System.Runtime.InteropServices.RuntimeEnvironment]::GetRuntimeDirectory()) 'Accessibility.dll')) -TypeDefinition @"
+${PICKER_NATIVE_CSHARP}
 "@
 
 $root = [System.Windows.Automation.AutomationElement]::RootElement
+[PickerNative]::UsePhysicalCoordinates()
 $targetWindow = '${escaped}'
 $scoped = ${scoped ? '$true' : '$false'}
 
@@ -93,6 +48,7 @@ if ($scoped) {
   $targetWnd = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, $wndCond)
   if ($targetWnd -eq $null) { throw "The selected application window is no longer available." }
   if ($targetWnd -ne $null) {
+    [PickerNative]::PrepareChromium([IntPtr]$targetWnd.Current.NativeWindowHandle)
     try {
       $wp = $targetWnd.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern)
       if ($wp -and $wp.Current.WindowVisualState -eq [System.Windows.Automation.WindowVisualState]::Minimized) {
@@ -147,6 +103,7 @@ $result = $null
 $lastEl = $null
 $wasEsc = $false
 $deadline = (Get-Date).AddSeconds(120)
+$cancelReason = 'timeout'
 
 [PickerNative]::StartMouseHook()
 try {
@@ -154,21 +111,38 @@ while ($true) {
   Start-Sleep -Milliseconds 25
   [System.Windows.Forms.Application]::DoEvents()
 
-  if ([PickerNative]::Cancelled) { break }
+  if ([PickerNative]::Cancelled) { $cancelReason = 'escape'; break }
   if ((Get-Date) -gt $deadline) { break }
 
   $esc = ([PickerNative]::GetAsyncKeyState([PickerNative]::VK_ESCAPE) -band 0x8000) -ne 0
-  if ($esc -and -not $wasEsc) { break }
+  if ($esc -and -not $wasEsc) { $cancelReason = 'escape'; break }
   $wasEsc = $esc
 
-  $pt = [System.Windows.Forms.Cursor]::Position
+  $pt = [PickerNative]::CursorPoint()
   $clicked = [PickerNative]::Clicked
   if ($clicked) {
     $pt = New-Object System.Drawing.Point([PickerNative]::ClickX, [PickerNative]::ClickY)
     [PickerNative]::Clicked = $false
   }
   $auPt = New-Object System.Windows.Point($pt.X, $pt.Y)
-  try { $el = [System.Windows.Automation.AutomationElement]::FromPoint($auPt) } catch { $el = $null }
+  try {
+    $el = [System.Windows.Automation.AutomationElement]::FromPoint($auPt)
+    if ($el -ne $null -and $el.Current.ClassName -like 'Chrome*') {
+      [PickerNative]::PrepareChromium([IntPtr]$el.Current.NativeWindowHandle)
+      $el = [System.Windows.Automation.AutomationElement]::FromPoint($auPt)
+    }
+  } catch { $el = $null }
+  $nativeHit = $null
+  $nativeError = ''
+  try { $nativeHit = [PickerNative]::HitTest($pt.X, $pt.Y) } catch { $nativeError = $_.Exception.Message }
+  $msaaError = ''
+  $msaaHit = $null
+  if ($nativeHit -eq $null -or $nativeHit.ControlType -eq 'Pane' -or $nativeHit.ControlType -eq 'Window') {
+    try {
+      $msaaHit = [PickerNative]::MsaaHitTest($pt.X, $pt.Y)
+      if ($msaaHit -ne $null -and $msaaHit.ControlType -ne 'Pane') { $nativeHit = $msaaHit }
+    } catch { $msaaError = $_.Exception.Message }
+  }
 
   $inScope = $false
   if ($el -ne $null) {
@@ -176,7 +150,10 @@ while ($true) {
     if ((-not $scoped) -or ($hoverWindow -eq $targetWindow)) {
       $inScope = $true
       $lastEl = $el
-      try { Set-HighlightRect $el.Current.BoundingRectangle } catch {}
+      try {
+        if ($nativeHit -ne $null) { Set-HighlightRect (New-Object System.Drawing.Rectangle([int]$nativeHit.Left, [int]$nativeHit.Top, [int]$nativeHit.Width, [int]$nativeHit.Height)) }
+        else { Set-HighlightRect $el.Current.BoundingRectangle }
+      } catch {}
     }
   }
   if (-not $inScope) {
@@ -185,14 +162,24 @@ while ($true) {
   }
 
   if ($clicked -and $inScope -and $lastEl -ne $null) {
+    if (($el.Current.ClassName -eq 'Chrome_RenderWidgetHostHWND' -or $el.Current.ClassName -eq 'Intermediate D3D Window') -and ($nativeHit -eq $null -or $nativeHit.ControlType -eq 'Pane')) {
+      throw 'The browser did not expose an accessible control here. Move over the control and try again.'
+    }
     $c = $lastEl.Current
     $ctName = $c.ControlType.ProgrammaticName -replace '^ControlType\\.',''
     $result = @{
+      diagnostic = @{ preparation = [PickerNative]::Preparation; nativeError = $nativeError; msaaError = $msaaError; msaaHit = $msaaHit; nativeHit = $nativeHit; point = $pt }
       name = $c.Name
       automationId = $c.AutomationId
       className = $c.ClassName
       controlType = $ctName
       windowTitle = (Get-WindowAncestorTitle $lastEl)
+    }
+    if ($nativeHit -ne $null -and $nativeHit.ControlType -ne 'Pane') {
+      $result.name = $nativeHit.Name
+      $result.automationId = $nativeHit.AutomationId
+      $result.className = $nativeHit.ClassName
+      $result.controlType = $nativeHit.ControlType
     }
     break
   }
@@ -204,7 +191,7 @@ while ($true) {
 }
 
 if ($result -eq $null) {
-  Write-Output '{"cancelled":true}'
+  Write-Output (@{cancelled=$true;cancelReason=$cancelReason} | ConvertTo-Json -Compress)
 } else {
   Write-Output ($result | ConvertTo-Json -Compress)
 }
@@ -214,6 +201,10 @@ if ($result -eq $null) {
 function buildSelector(r: { windowTitle?: string; automationId?: string; name?: string; controlType?: string; className?: string }): string {
   const window = r.windowTitle ?? '';
   if (r.controlType === 'Window') return `window:${window}`;
+  if (!r.className && r.name && r.controlType && r.controlType !== 'Pane') {
+    const encoded = Buffer.from(JSON.stringify({ name: r.name, controlType: r.controlType }), 'utf8').toString('base64');
+    return `window:${window} > msaa:${encoded}`;
+  }
   if (r.automationId) return `window:${window} > automationId:${r.automationId}`;
   if (r.name && r.controlType) return `window:${window} > controlType:${r.controlType},name:${r.name}`;
   if (r.name) return `window:${window} > name:${r.name}`;
@@ -221,10 +212,10 @@ function buildSelector(r: { windowTitle?: string; automationId?: string; name?: 
   return `window:${window}`;
 }
 
-export async function pickDesktopElement(windowTitle = '', signal?: AbortSignal): Promise<PickedElement> {
+export async function pickDesktopElement(windowTitle = '', signal?: AbortSignal, diagnostic?: (data: unknown) => void): Promise<PickedElement> {
   if (signal?.aborted) return { cancelled: true };
   const tmpFile = path.join(os.tmpdir(), `rpa-picker-${Date.now()}-${Math.floor(Math.random() * 1e6)}.ps1`);
-  fs.writeFileSync(tmpFile, buildPickerScript(windowTitle), { encoding: 'utf8' });
+  fs.writeFileSync(tmpFile, '\uFEFF' + buildPickerScript(windowTitle), { encoding: 'utf8' });
 
   try {
     const stdout = await new Promise<string>((resolve, reject) => {
@@ -247,6 +238,8 @@ export async function pickDesktopElement(windowTitle = '', signal?: AbortSignal)
 
     const line = stdout.trim().split('\n').filter(Boolean).pop() ?? '{"cancelled":true}';
     const parsed = JSON.parse(line);
+    diagnostic?.(parsed.diagnostic ?? { cancelReason: parsed.cancelReason });
+    if (parsed.cancelled && parsed.cancelReason === 'timeout') throw new Error('Element picking timed out. Try again.');
     if (parsed.cancelled) return { cancelled: true };
 
     const picked: PickedElement = {
