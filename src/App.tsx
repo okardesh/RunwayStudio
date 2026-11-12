@@ -12,6 +12,9 @@ import { ConnectionAssistant } from './components/ConnectionAssistant/Connection
 import { heartbeatRunwayLicense, releaseRunwayLicense, type RunwayConnection } from './engine/runwayConnection';
 import { PublishWorkflowModal } from './components/PublishWorkflowModal/PublishWorkflowModal';
 import './App.css';
+import { Icon, RunwayMark } from './components/Icon';
+import { ThemeSwitcher } from './components/ThemeSwitcher';
+import { applyStudioTheme, useThemeStore } from './store/themeStore';
 
 type Tab = 'design' | 'debug';
 
@@ -19,6 +22,8 @@ const isEditableTarget = (el: EventTarget | null) =>
   el instanceof HTMLElement && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
 
 function App() {
+  const theme = useThemeStore((s) => s.theme);
+  useEffect(() => { applyStudioTheme(theme); }, [theme]);
   const [activeTab, setActiveTab] = useState<Tab>('design');
   const [runwayConnection, setRunwayConnection] = useState<RunwayConnection | null>(null);
   const [showPublishModal, setShowPublishModal] = useState(false);
@@ -27,6 +32,8 @@ function App() {
   const edges = useWorkflowStore((s) => s.edges);
   const variables = useWorkflowStore((s) => s.variables);
   const workflowArguments = useWorkflowStore((s) => s.arguments);
+  const activitySearch = useUiStore((s) => s.activitySearchQuery);
+  const setActivitySearch = useUiStore((s) => s.setActivitySearchQuery);
 
   // Toolbar reacts to activeTab itself (starts/stops the debug run) — this just switches views.
   const handleTabChange = (tab: Tab) => setActiveTab(tab);
@@ -89,7 +96,7 @@ function App() {
     <div className="app">
       <header className="app-header">
         <div className="app-header__brand">
-          <img className="app-header__logo" src="/logo.png" alt="Runway Studio" />
+          <RunwayMark /><span className="app-header__wordmark">Runway<span>Studio</span></span>
         </div>
         <button
           className={`app-header__tab${activeTab === 'design' ? ' app-header__tab--active' : ''}`}
@@ -104,10 +111,12 @@ function App() {
           Debug
         </button>
         <div className="app-header__search-wrap">
-          <input className="app-header__search" placeholder="Search" type="text" />
+          <Icon name="search" size={16} /><input className="app-header__search" placeholder="Find an activity..." aria-label="Find an activity" type="search" value={activitySearch} onChange={(event) => setActivitySearch(event.target.value)} />
         </div>
         <div className="app-header__right">
-          <span className="app-header__project">{projectName}</span>
+          <ThemeSwitcher />
+          <span className="app-header__connection"><span />Runway connected</span>
+          <span className="app-header__project" title={projectName}><Icon name="folder" size={15} />{projectName}</span>
         </div>
       </header>
 

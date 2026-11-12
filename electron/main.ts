@@ -8,6 +8,7 @@ import { executeActivity } from './automation/index.js'
 import { pickDesktopElement } from './automation/picker.js'
 import { registerRunwayLicenseIpc } from './runwayLicenseIpc'
 import { captureFailureScreenshot } from './executionScreenshot'
+import { registerStudioThemeIpc } from './studioThemeIpc'
 
 const _require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -53,7 +54,11 @@ function createWindow() {
     height: 900,
     minWidth: 1100,
     minHeight: 700,
-    backgroundColor: '#1E1F2E',
+    backgroundColor: '#0A1120',
+    ...(process.platform === 'win32' ? {
+      titleBarStyle: 'hidden' as const,
+      titleBarOverlay: { color: '#101827', symbolColor: '#94A3B8', height: 56 },
+    } : {}),
     title: 'Runway Studio',
     icon: logoPath(),
     webPreferences: {
@@ -85,6 +90,7 @@ app.on('activate', () => {
 })
 
 app.whenReady().then(() => {
+  registerStudioThemeIpc(ipcMain, () => win);
   registerRunwayLicenseIpc(ipcMain, () => win?.webContents);
   ipcMain.handle('runway:get-api-key', (_event, serverUrl: string) => {
     if (!safeStorage.isEncryptionAvailable()) return null;

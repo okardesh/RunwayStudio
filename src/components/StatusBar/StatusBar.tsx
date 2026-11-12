@@ -3,15 +3,16 @@ import { useUiStore } from '../../store/uiStore';
 import './StatusBar.css';
 
 const STATUS_CONFIG = {
-  idle:      { color: '#CA5010', dot: '#CA5010', label: 'Robot Error' },
-  running:   { color: '#107C10', dot: '#107C10', label: 'Running' },
-  paused:    { color: '#FFA726', dot: '#FFA726', label: 'Paused' },
-  error:     { color: '#C50F1F', dot: '#C50F1F', label: 'Error' },
-  completed: { color: '#107C10', dot: '#107C10', label: 'Ready' },
+  idle:      { color: 'var(--studio-muted)', dot: 'var(--studio-subtle)', label: 'Ready' },
+  running:   { color: 'var(--studio-green)', dot: 'var(--studio-green)', label: 'Running' },
+  paused:    { color: 'var(--studio-warning)', dot: 'var(--studio-warning)', label: 'Paused' },
+  error:     { color: 'var(--studio-red)', dot: 'var(--studio-red)', label: 'Error' },
+  completed: { color: 'var(--studio-green)', dot: 'var(--studio-green)', label: 'Completed' },
 } as const;
 
 export function StatusBar() {
   const { status } = useWorkflowStore();
+  const activityCount = useWorkflowStore((state) => state.nodes.length);
   const statusMessage = useUiStore((state) => state.statusMessage);
   const cfg = STATUS_CONFIG[status];
 
@@ -31,11 +32,9 @@ export function StatusBar() {
       </div>
 
       <div className="status-bar__right">
-        <button className="status-bar__action">+ Add To Source Control</button>
+        <span className="status-bar__info">{activityCount} activities</span>
         <span className="status-bar__sep" />
-        <button className="status-bar__action">↑ Save to Cloud</button>
-        <span className="status-bar__sep" />
-        <span className="status-bar__info">VB, Windows</span>
+        <span className="status-bar__info">Windows · Local workspace</span>
       </div>
     </div>
   );

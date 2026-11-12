@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { connectToRunwayServer, getSavedServerUrl, type RunwayConnection } from '../../engine/runwayConnection';
 import './ConnectionAssistant.css';
+import { ThemeSwitcher } from '../ThemeSwitcher';
 
 interface ConnectionAssistantProps {
   onConnected: (connection: RunwayConnection) => void;
@@ -36,6 +37,7 @@ export function ConnectionAssistant({ onConnected }: ConnectionAssistantProps) {
 
   return (
     <main className="connection-assistant">
+      <div className="connection-assistant__appearance"><ThemeSwitcher /></div>
       <section className="connection-assistant__panel">
         <div className="connection-assistant__mark">R</div>
         <p className="connection-assistant__eyebrow">RUNWAY STUDIO</p>

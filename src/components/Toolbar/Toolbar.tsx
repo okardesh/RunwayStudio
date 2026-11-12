@@ -4,6 +4,7 @@ import { useUiStore } from '../../store/uiStore';
 import { executeWorkflow, requestStop, resumeDebug } from '../../engine/executor';
 import { saveWorkflow, openWorkflow } from '../../engine/fileOps';
 import './Toolbar.css';
+import { Icon } from '../Icon';
 import { createPortal } from 'react-dom';
 import { WorkflowRecorderModal } from '../Recorder/WorkflowRecorderModal';
 import { buildRecordedWorkflow } from '../Recorder/workflowRecording';
@@ -134,15 +135,15 @@ export function Toolbar({ activeTab, onPublish }: ToolbarProps) {
       <div className="ribbon__group">
         <div className="ribbon__btns">
           <button className="rbn-btn" onClick={handleNew} title="New Workflow (Ctrl+N)">
-            <span className="rbn-btn__icon">📄</span>
+            <span className="rbn-btn__icon"><Icon name="file" /></span>
             <span className="rbn-btn__label">New</span>
           </button>
           <button className="rbn-btn" onClick={handleSave} disabled={!isDirty} title="Save Workflow (Ctrl+S)">
-            <span className="rbn-btn__icon">💾</span>
+            <span className="rbn-btn__icon"><Icon name="save" /></span>
             <span className="rbn-btn__label">Save</span>
           </button>
           <button className="rbn-btn" onClick={handleLoad} title="Open Workflow">
-            <span className="rbn-btn__icon">📂</span>
+            <span className="rbn-btn__icon"><Icon name="folder" /></span>
             <span className="rbn-btn__label">Open</span>
           </button>
         </div>
@@ -161,17 +162,17 @@ export function Toolbar({ activeTab, onPublish }: ToolbarProps) {
                 disabled={isRunning}
                 title="Run (F5)"
               >
-                <span className="rbn-btn__icon rbn-btn__icon--lg">▶</span>
+                <span className="rbn-btn__icon rbn-btn__icon--lg"><Icon name="play" /></span>
                 <span className="rbn-btn__label">Run</span>
               </button>
-              <button className="rbn-btn" disabled={isRunning} onClick={() => setShowRecorder(true)} title="Record browser actions"><span className="rbn-btn__icon">⏺</span><span className="rbn-btn__label">Record</span></button>
+              <button className="rbn-btn" disabled={isRunning} onClick={() => setShowRecorder(true)} title="Record browser actions"><span className="rbn-btn__icon"><Icon name="record" /></span><span className="rbn-btn__label">Record</span></button>
               <button
                 className="rbn-btn rbn-btn--stop"
                 onClick={handleStop}
                 disabled={!isRunning}
                 title="Stop (Shift+F5)"
               >
-                <span className="rbn-btn__icon rbn-btn__icon--lg">⏹</span>
+                <span className="rbn-btn__icon rbn-btn__icon--lg"><Icon name="stop" /></span>
                 <span className="rbn-btn__label">Stop</span>
               </button>
             </div>
@@ -183,7 +184,7 @@ export function Toolbar({ activeTab, onPublish }: ToolbarProps) {
           <div className="ribbon__group">
             <div className="ribbon__btns">
               <button className="rbn-btn rbn-btn--publish" onClick={onPublish} disabled={isRunning} title="Publish to Runway RPA Catalog">
-                <span className="rbn-btn__icon rbn-btn__icon--lg">&#x21E7;</span>
+                <span className="rbn-btn__icon rbn-btn__icon--lg"><Icon name="upload" /></span>
                 <span className="rbn-btn__label">Publish</span>
               </button>
             </div>
@@ -200,7 +201,7 @@ export function Toolbar({ activeTab, onPublish }: ToolbarProps) {
                 disabled={isRunning && !isPaused}
                 title={isPaused ? 'Continue (F5)' : 'Debug workflow'}
               >
-                <span className="rbn-btn__icon rbn-btn__icon--lg">▶</span>
+                <span className="rbn-btn__icon rbn-btn__icon--lg"><Icon name="play" /></span>
                 <span className="rbn-btn__label">{isPaused ? 'Continue' : 'Debug'}</span>
               </button>
               <button
@@ -209,11 +210,11 @@ export function Toolbar({ activeTab, onPublish }: ToolbarProps) {
                 disabled={!isRunning && !isPaused}
                 title="Stop (Shift+F5)"
               >
-                <span className="rbn-btn__icon rbn-btn__icon--lg">⏹</span>
+                <span className="rbn-btn__icon rbn-btn__icon--lg"><Icon name="stop" /></span>
                 <span className="rbn-btn__label">Stop</span>
               </button>
               <button className="rbn-btn" onClick={handleRestart} title="Restart debug run">
-                <span className="rbn-btn__icon rbn-btn__icon--lg">↻</span>
+                <span className="rbn-btn__icon rbn-btn__icon--lg"><Icon name="repeat" /></span>
                 <span className="rbn-btn__label">Restart</span>
               </button>
             </div>
@@ -228,7 +229,7 @@ export function Toolbar({ activeTab, onPublish }: ToolbarProps) {
                 disabled={!isPaused}
                 title="Step Into (F11) — descend into the next container's first activity"
               >
-                <span className="rbn-btn__icon rbn-btn__icon--lg">⬇</span>
+                <span className="rbn-btn__icon rbn-btn__icon--lg"><Icon name="arrowDown" /></span>
                 <span className="rbn-btn__label">Step Into</span>
               </button>
               <button
@@ -237,7 +238,7 @@ export function Toolbar({ activeTab, onPublish }: ToolbarProps) {
                 disabled={!isPaused}
                 title="Step Over (F10) — run the next activity (or whole container) as one step"
               >
-                <span className="rbn-btn__icon rbn-btn__icon--lg">➡</span>
+                <span className="rbn-btn__icon rbn-btn__icon--lg"><Icon name="arrowRight" /></span>
                 <span className="rbn-btn__label">Step Over</span>
               </button>
             </div>
@@ -262,62 +263,15 @@ export function Toolbar({ activeTab, onPublish }: ToolbarProps) {
 
       <div className="ribbon__group">
         <div className="ribbon__btns">
-          <button className="rbn-btn" disabled title="Screen Scraping">
-            <span className="rbn-btn__icon">🖼️</span>
-            <span className="rbn-btn__label">Screen<br/>Scraping</span>
-          </button>
-          <button className="rbn-btn" disabled title="Data Scraping">
-            <span className="rbn-btn__icon">📊</span>
-            <span className="rbn-btn__label">Data<br/>Scraping</span>
-          </button>
-        </div>
-        <span className="ribbon__group-label">Wizards</span>
-      </div>
-
-      <div className="ribbon__sep" />
-
-      <div className="ribbon__group">
-        <div className="ribbon__btns">
-          <button className="rbn-btn" disabled title="UI Explorer">
-            <span className="rbn-btn__icon rbn-btn__icon--lg">🔍</span>
-            <span className="rbn-btn__label">UI<br/>Explorer</span>
-          </button>
-          <button className="rbn-btn" disabled title="Remove Unused Variables">
-            <span className="rbn-btn__icon">🧹</span>
-            <span className="rbn-btn__label">Remove<br/>Unused</span>
-          </button>
-        </div>
-        <span className="ribbon__group-label">Selectors</span>
-      </div>
-
-      <div className="ribbon__sep" />
-
-      <div className="ribbon__group">
-        <div className="ribbon__btns">
-          <button className="rbn-btn" disabled title="Manage Variables">
-            <span className="rbn-btn__icon rbn-btn__icon--lg">🔤</span>
-            <span className="rbn-btn__label">Variables</span>
-          </button>
-          <button className="rbn-btn" disabled title="Manage Packages">
-            <span className="rbn-btn__icon rbn-btn__icon--lg">📦</span>
-            <span className="rbn-btn__label">Packages</span>
-          </button>
-        </div>
-        <span className="ribbon__group-label">Dependencies</span>
-      </div>
-
-      <div className="ribbon__sep" />
-
-      <div className="ribbon__group">
-        <div className="ribbon__btns">
           <button
             className={`rbn-btn${activeBottomPanelTab === 'output' ? ' active' : ''}`}
             onClick={() => setActiveBottomPanelTab('output')}
             title="Show Output"
           >
-            <span className="rbn-btn__icon rbn-btn__icon--lg">📋</span>
+            <span className="rbn-btn__icon rbn-btn__icon--lg"><Icon name="terminal" /></span>
             <span className="rbn-btn__label">Output</span>
           </button>
+          <button className={`rbn-btn${activeBottomPanelTab === 'history' ? ' active' : ''}`} onClick={() => setActiveBottomPanelTab('history')} title="Show Run History"><Icon name="history" /><span className="rbn-btn__label">History</span></button>
         </div>
         <span className="ribbon__group-label">View</span>
       </div>

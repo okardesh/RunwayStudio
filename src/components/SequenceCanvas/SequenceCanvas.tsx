@@ -8,6 +8,7 @@ import type { WorkflowNodeData } from '../../types';
 import { IndicateModal } from '../IndicateModal/IndicateModal';
 import { ExpressionInput } from '../PropertiesPanel/ExpressionInput';
 import './SequenceCanvas.css';
+import { Icon, ActivityGlyph } from '../Icon';
 
 // ── Container card (Use Application/Browser) ─────────────────────────────────
 
@@ -74,7 +75,7 @@ function ContainerCard({
           title={node.data.breakpoint ? 'Remove breakpoint' : 'Set breakpoint'}
         >●</button>
         {isExecuting && isPaused && <span className="seq-card__pause-arrow">▶</span>}
-        <span className="container-card__hdr-icon">{node.data.icon}</span>
+        <span className="container-card__hdr-icon"><ActivityGlyph activityId={node.data.activityId} /></span>
         <span className="container-card__hdr-name">{node.data.label}</span>
         <div className="container-card__hdr-actions">
           {isTargetContainer && !hasTarget && <span className="container-card__warn" title="No target set">⚠</span>}
@@ -142,8 +143,8 @@ function ContainerCard({
 
           {children.length === 0 && !childDragActive && (
             <div className="seq-canvas__empty" style={{ padding: '20px 12px' }}>
-              <div className="seq-canvas__empty-icon">⊕</div>
-              <p>Drop activity here</p>
+              <div className="seq-canvas__empty-icon"><Icon name="plus" size={28} /></div>
+              <p>Build your workflow</p><span>Drag an activity from the library to get started</span>
             </div>
           )}
 
@@ -176,7 +177,7 @@ function ContainerCard({
                   >●</button>
                   {childIsPaused && <span className="seq-card__pause-arrow">▶</span>}
                   <div className="seq-card__icon" style={{ background: child.data.color ?? '#0078D4' }}>
-                    {child.data.icon}
+                    <ActivityGlyph activityId={child.data.activityId} />
                   </div>
                   <div className="seq-card__body">
                     <span className="seq-card__name">{child.data.label}</span>
@@ -218,7 +219,7 @@ function ForEachCard({ node, isSelected, isExecuting, onSelect, onDelete }: {
   return (
     <div className={`for-each-card${isSelected ? ' for-each-card--selected' : ''}${isExecuting ? ' for-each-card--executing' : ''}`} onClick={(event) => { event.stopPropagation(); onSelect(); }}>
       <div className="for-each-card__hdr">
-        <span className="for-each-card__icon">{node.data.icon}</span>
+        <span className="for-each-card__icon"><ActivityGlyph activityId={node.data.activityId} /></span>
         <span className="for-each-card__title">{node.data.label}</span>
         <button className="seq-card__collapse" onClick={(event) => { event.stopPropagation(); toggleNodeCollapsed(node.id); }} title={isCollapsed ? 'Expand block' : 'Collapse block'}>{isCollapsed ? '▸' : '▾'}</button>
         <button className="for-each-card__delete" onClick={(event) => { event.stopPropagation(); onDelete(); }} title="Remove For Each">×</button>
@@ -241,7 +242,7 @@ function ForEachCard({ node, isSelected, isExecuting, onSelect, onDelete }: {
         >
           {children.length === 0 ? <div className="for-each-card__empty">Drop activity here</div> : children.map((child) => (
             <div key={child.id} className={`seq-card${selectedNodeId === child.id ? ' seq-card--selected' : ''}`} style={{ borderLeftColor: child.data.color ?? '#6A1B9A' }} onClick={(event) => { event.stopPropagation(); setSelectedNode(child.id); }}>
-              <div className="seq-card__icon" style={{ background: child.data.color ?? '#0078D4' }}>{child.data.icon}</div>
+              <div className="seq-card__icon" style={{ background: child.data.color ?? '#0078D4' }}><ActivityGlyph activityId={child.data.activityId} /></div>
               <div className="seq-card__body"><span className="seq-card__name">{child.data.label}</span></div>
               <button className="seq-card__delete" onClick={(event) => { event.stopPropagation(); deleteNode(child.id); }} title="Remove">×</button>
             </div>
@@ -267,7 +268,7 @@ function IfCard({ node, isSelected, isExecuting, onSelect, onDelete }: {
   return (
     <div className={`if-card${isSelected ? ' if-card--selected' : ''}${isExecuting ? ' if-card--executing' : ''}`} onClick={(event) => { event.stopPropagation(); onSelect(); }}>
       <div className="if-card__hdr">
-        <span className="if-card__icon">{node.data.icon}</span>
+        <span className="if-card__icon"><ActivityGlyph activityId={node.data.activityId} /></span>
         <span className="if-card__title">{node.data.label}</span>
         <button className="seq-card__collapse" onClick={(event) => { event.stopPropagation(); toggleNodeCollapsed(node.id); }} title={isCollapsed ? 'Expand block' : 'Collapse block'}>{isCollapsed ? '▸' : '▾'}</button>
         <button className="if-card__delete" onClick={(event) => { event.stopPropagation(); onDelete(); }} title="Remove If">×</button>
@@ -314,7 +315,7 @@ function IfCard({ node, isSelected, isExecuting, onSelect, onDelete }: {
                     event.dataTransfer.setData('application/rpa-if-branch-id', branch.id);
                     event.dataTransfer.effectAllowed = 'move';
                   }}>
-                    <div className="seq-card__icon" style={{ background: child.data.color ?? '#0078D4' }}>{child.data.icon}</div>
+                    <div className="seq-card__icon" style={{ background: child.data.color ?? '#0078D4' }}><ActivityGlyph activityId={child.data.activityId} /></div>
                     <div className="seq-card__body"><span className="seq-card__name">{child.data.label}</span></div>
                     <button className="seq-card__collapse" onClick={(event) => { event.stopPropagation(); toggleNodeCollapsed(child.id); }} title={childIsCollapsed ? 'Expand activity' : 'Collapse activity'}>{childIsCollapsed ? '▸' : '▾'}</button>
                     <button className="seq-card__delete" onClick={(event) => { event.stopPropagation(); deleteNode(child.id); }} title="Remove">×</button>
@@ -345,7 +346,7 @@ function TryCatchCard({ node, isSelected, isExecuting, onSelect, onDelete }: {
   return (
     <div className={`try-catch-card${isSelected ? ' try-catch-card--selected' : ''}${isExecuting ? ' try-catch-card--executing' : ''}`} onClick={(event) => { event.stopPropagation(); onSelect(); }}>
       <div className="try-catch-card__hdr">
-        <span className="try-catch-card__icon">{node.data.icon}</span>
+        <span className="try-catch-card__icon"><ActivityGlyph activityId={node.data.activityId} /></span>
         <span className="try-catch-card__title">{node.data.label}</span>
         <button className="seq-card__collapse" onClick={(event) => { event.stopPropagation(); toggleNodeCollapsed(node.id); }} title={isCollapsed ? 'Expand block' : 'Collapse block'}>{isCollapsed ? '▸' : '▾'}</button>
         <button className="try-catch-card__delete" onClick={(event) => { event.stopPropagation(); onDelete(); }} title="Remove Try Catch">×</button>
@@ -403,7 +404,7 @@ function TryCatchCard({ node, isSelected, isExecuting, onSelect, onDelete }: {
                       event.dataTransfer.setData('application/rpa-if-branch-id', branch.id);
                       event.dataTransfer.effectAllowed = 'move';
                     }}>
-                      <div className="seq-card__icon" style={{ background: child.data.color ?? '#0078D4' }}>{child.data.icon}</div>
+                      <div className="seq-card__icon" style={{ background: child.data.color ?? '#0078D4' }}><ActivityGlyph activityId={child.data.activityId} /></div>
                       <div className="seq-card__body"><span className="seq-card__name">{child.data.label}</span></div>
                       <button className="seq-card__delete" onClick={(event) => { event.stopPropagation(); deleteNode(child.id); }} title="Remove">×</button>
                     </div>
@@ -502,7 +503,7 @@ export function SequenceCanvas() {
       <div className="seq-canvas__header">
         <div className="seq-canvas__tabs">
           <div className="seq-canvas__tab seq-canvas__tab--active">
-            <span>Main</span>
+            <Icon name="file" size={15} /><span>Main</span><span className="seq-canvas__file-type">WORKFLOW</span>
             <button className="seq-canvas__tab-close">×</button>
           </div>
         </div>
@@ -517,7 +518,7 @@ export function SequenceCanvas() {
 
           <div className="seq-container">
             <div className="seq-container__header">
-              <span className="seq-container__name">Main Sequence</span>
+              <Icon name="layers" size={16} /><span className="seq-container__name">Main Sequence</span><span className="seq-container__badge">Sequence</span>
             </div>
             <div className="seq-container__body">
 
@@ -531,8 +532,9 @@ export function SequenceCanvas() {
 
               {topLevelNodes.length === 0 && !canvasDragActive && (
                 <div className="seq-canvas__empty">
-                  <div className="seq-canvas__empty-icon">⊕</div>
-                  <p>Drop activity here</p>
+                  <div className="seq-canvas__empty-icon"><Icon name="plus" size={28} /></div>
+                  <p>Build your workflow</p>
+                  <span>Drag an activity from the library to get started</span>
                 </div>
               )}
 
@@ -612,7 +614,7 @@ export function SequenceCanvas() {
                       >●</button>
                       {nodeIsPaused && <span className="seq-card__pause-arrow">▶</span>}
                       <div className="seq-card__icon" style={{ background: node.data.color ?? '#0078D4' }}>
-                        {node.data.icon}
+                        <ActivityGlyph activityId={node.data.activityId} />
                       </div>
                       <div className="seq-card__body">
                         <span className="seq-card__name">{node.data.label}</span>

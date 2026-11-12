@@ -4,6 +4,7 @@ import { useUiStore, type BottomPanelTab } from '../../store/uiStore';
 import type { WorkflowArgument, WorkflowVariable } from '../../types';
 import './BottomPanel.css';
 import { RunHistoryPanel } from './RunHistoryPanel';
+import { Icon, type IconName } from '../Icon';
 
 type SubTab = 'variables' | 'arguments' | 'namespaces' | 'connections';
 
@@ -23,7 +24,7 @@ const DOTNET_TYPES = [
 ];
 
 const LEVEL_COLORS: Record<string, string> = {
-  Info: '#0078D4', Warning: '#CA5010', Error: '#C50F1F', Debug: '#7A7A7A',
+  Info: 'var(--studio-blue)', Warning: 'var(--studio-warning)', Error: 'var(--studio-red)', Debug: 'var(--studio-subtle)',
 };
 
 export function BottomPanel() {
@@ -147,7 +148,7 @@ export function BottomPanel() {
               className={`bp__main-tab${mainTab === id ? ' bp__main-tab--active' : ''}`}
               onClick={() => setActiveBottomPanelTab(id)}
             >
-              {label}
+              <Icon name={({ dataManager: 'data', output: 'terminal', history: 'history', markers: 'layers', errors: 'alert' } as Record<BottomPanelTab, IconName>)[id]} size={14} />{label}
             </button>
           ))}
         </div>

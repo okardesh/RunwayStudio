@@ -7,6 +7,7 @@ import { RecorderModal } from '../Recorder/RecorderModal';
 import { DesktopPickerModal } from '../Recorder/DesktopPickerModal';
 import { ExpressionInput } from './ExpressionInput';
 import './PropertiesPanel.css';
+import { Icon } from '../Icon';
 
 // ── Properties Content (UiPath property grid style) ──────────────────────────
 
@@ -18,7 +19,7 @@ function PropertiesContent() {
   if (!selectedNode) {
     return (
       <div className="prop-grid__empty">
-        <div className="prop-grid__empty-icon">🔧</div>
+        <div className="prop-grid__empty-icon"><Icon name="cursor" size={28} /></div>
         <p>Select an activity to edit its properties</p>
       </div>
     );
@@ -59,9 +60,7 @@ function PropertiesContent() {
   })();
 
   const activity = getActivity(selectedNode.data.activityId);
-  const typeName = activity
-    ? `UiPath.UIAutomationNext.Activities.N${selectedNode.data.activityId.replace(/-/g, '_').replace(/\b\w/g, (c) => c.toUpperCase()).replace(/_/g, '')}`
-    : 'System.Activities.Statements.Sequence';
+  const typeName = activity?.name ?? 'Sequence';
 
   const props = selectedNode.data.properties;
 
@@ -160,7 +159,7 @@ function PropertiesContent() {
             placeholder={prop.description ?? ''}
             variables={scopedVariables}
           />
-          <button className="pgrid-pick-btn" onClick={() => setRecorderFor(prop.name)} title="Pick element">🎯</button>
+          <button className="pgrid-pick-btn" onClick={() => setRecorderFor(prop.name)} title="Pick element"><Icon name="cursor" size={15} /></button>
         </div>
       );
     }
@@ -186,7 +185,7 @@ function PropertiesContent() {
 
   return (
     <div className="prop-grid">
-      <div className="prop-grid__type">{typeName}</div>
+      <div className="prop-grid__type"><strong>{typeName}</strong><span>{activity?.description ?? 'An ordered group of activities.'}</span></div>
 
       {Object.entries(sectionMap).map(([sectionName, propNames]) => {
         if (propNames.length === 0) return null;
@@ -306,8 +305,8 @@ export function PropertiesPanel() {
   return (
     <div className="properties-panel">
       <div className="properties-panel__header">
-        <span className="properties-panel__title">Properties</span>
-        <button className="properties-panel__filter">🔍</button>
+        <Icon name="settings" size={17} /><span className="properties-panel__title">Properties</span>
+        <span className="properties-panel__caption">Inspector</span>
       </div>
       <div className="properties-panel__content">
         <PropertiesContent />

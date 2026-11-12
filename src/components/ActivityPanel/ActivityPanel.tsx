@@ -3,6 +3,7 @@ import { useUiStore } from '../../store/uiStore';
 import { activityCategories } from '../../activities/registry';
 import type { ActivityDefinition } from '../../types';
 import './ActivityPanel.css';
+import { ActivityGlyph, Icon } from '../Icon';
 
 const FAVORITES: string[] = ['use-app-browser', 'click', 'type-text', 'get-text', 'sequence', 'if', 'navigate-to'];
 const RECENT: string[] = ['use-app-browser', 'navigate-to', 'click', 'type-text', 'get-text', 'sequence', 'if', 'delay'];
@@ -23,7 +24,7 @@ function ActivityItem({ activity, indent = false }: { activity: ActivityDefiniti
       onDragStart={handleDragStart}
       title={activity.description}
     >
-      {activity.icon && <span className="activity-item__icon" style={{ color: activity.color }}>{activity.icon}</span>}
+      <span className="activity-item__icon"><ActivityGlyph activityId={activity.id} /></span>
       <span className="activity-item__name">{activity.name}</span>
     </div>
   );
@@ -65,7 +66,7 @@ function ActivityGroup({ name, activities }: { name: string; activities: Activit
 
 export function ActivityPanel() {
   const { activitySearchQuery, expandedCategories, setActivitySearchQuery, toggleCategory } = useUiStore();
-  const [showSearch, setShowSearch] = useState(false);
+  const [showSearch, setShowSearch] = useState(true);
 
   const query = activitySearchQuery.toLowerCase();
 
@@ -87,16 +88,15 @@ export function ActivityPanel() {
   return (
     <div className="activity-panel">
       <div className="activity-panel__header">
-        <span className="activity-panel__title">Activities</span>
+        <Icon name="box" size={17} /><span className="activity-panel__title">Activities</span><span className="activity-panel__count">{allActivities.length}</span>
         <div className="activity-panel__header-actions">
           <button
             className={`ap-hdr-btn${showSearch ? ' active' : ''}`}
             title="Search"
             onClick={() => { setShowSearch(!showSearch); if (showSearch) setActivitySearchQuery(''); }}
           >
-            🔍
+            <Icon name="search" size={15} />
           </button>
-          <button className="ap-hdr-btn" title="Filter">⚙</button>
         </div>
       </div>
 
@@ -133,7 +133,7 @@ export function ActivityPanel() {
         ) : (
           /* Normal tree mode */
           <>
-            <Section title="Favorites" defaultOpen={false}>
+            <Section title="Favorites" defaultOpen={true}>
               {favoriteActivities.map((a) => <ActivityItem key={a.id} activity={a} />)}
             </Section>
 
