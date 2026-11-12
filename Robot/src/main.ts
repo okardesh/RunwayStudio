@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { executeActivity } from '../../electron/automation/index.js';
+import { resolveLogMessage } from '../../src/shared/logMessageExpression';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.join(__dirname, '..');
@@ -147,7 +148,10 @@ async function executeWorkflow(definition: WorkflowDefinition, inputs: Record<st
     const activityId = data?.activityId;
     if (!activityId) throw new Error(`Workflow node ${node.id} has no activity ID.`);
     log(logs, 'info', `Starting ${data?.label ?? activityId}`);
-    const result = await executeActivity(activityId, resolveProperties(data?.properties ?? {}));
+    const properties = data?.properties ?? {};
+    const resolved = resolveProperties(properties);
+    if (activityId === 'log-message') resolved.message = resolveLogMessage(properties.message, values);
+    const result = await executeActivity(activityId, resolved);
     log(logs, result.success ? 'info' : 'error', result.log);
     if (!result.success) throw new Error(result.log || `${activityId} failed.`);
     Object.assign(values, result.outputs ?? {});

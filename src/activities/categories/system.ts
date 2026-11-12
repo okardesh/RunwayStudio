@@ -89,6 +89,7 @@ export const systemActivities: ActivityDefinition[] = [
         name: 'message',
         label: 'Message',
         type: 'expression',
+        description: 'Variable name (textResult), template (Result: {{textResult}}), or quoted literal ("textResult").',
         defaultValue: '',
         required: true,
       },

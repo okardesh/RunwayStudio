@@ -1,6 +1,7 @@
 ﻿import type { Node, Edge } from 'reactflow';
 import type { WorkflowNodeData, WorkflowVariable } from '../types';
 import { createExecutionTrace } from './executionTrace';
+import { resolveLogMessage } from '../shared/logMessageExpression';
 
 export type LogLevel = 'Info' | 'Warning' | 'Error' | 'Debug';
 export type LogFn = (text: string, level: LogLevel) => void;
@@ -196,7 +197,9 @@ async function executeWorkflowCore(
   const onNodeEnd = (id: string) => { trace.end(id, _stopRequested); notifyEnd(id); };
   const onLog: LogFn = (text, level) => { if (level === 'Error') trace.error(text); notifyLog(text, level); };
   const runWithValues = async (activityId: string, properties: Record<string, unknown>) => {
-    trace.inputs(resolveProperties(properties, values));
+    const inputs = resolveProperties(properties, values);
+    if (activityId === 'log-message') inputs.message = resolveLogMessage(properties.message, values);
+    trace.inputs(inputs);
     let success = false;
     try { success = await runWithValuesCore(activityId, properties); }
     catch (error) { onLog(error instanceof Error ? error.message : String(error), 'Error'); }
@@ -236,6 +239,7 @@ async function executeWorkflowCore(
       return true;
     }
     const resolvedProperties = resolveProperties(properties, values);
+    if (activityId === 'log-message') resolvedProperties.message = resolveLogMessage(properties.message, values);
     if (activityId === 'write-csv') {
       resolvedProperties.data = resolveCollectionValue(properties.data, values);
     }
