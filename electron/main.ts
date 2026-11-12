@@ -7,6 +7,7 @@ import { execFile } from 'node:child_process'
 import { executeActivity } from './automation/index.js'
 import { pickDesktopElement } from './automation/picker.js'
 import { registerRunwayLicenseIpc } from './runwayLicenseIpc'
+import { captureFailureScreenshot } from './executionScreenshot'
 
 const _require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -129,6 +130,9 @@ app.whenReady().then(() => {
   ipcMain.handle('automation:execute', async (_e, id: string, props: Record<string, unknown>) =>
     executeActivity(id, props)
   );
+
+  // Best-effort error evidence, independent of the automation activity result.
+  ipcMain.handle('automation:capture-failure', captureFailureScreenshot);
 
   // Return all open windows with title and base64 thumbnail for the Indicate modal
   ipcMain.handle('get-open-windows', async () => {

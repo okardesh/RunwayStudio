@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import type { Node } from 'reactflow';
 import { useWorkflowStore } from '../../store/workflowStore';
+import { useUiStore } from '../../store/uiStore';
 import { getActivity } from '../../activities/registry';
 import type { WorkflowNodeData } from '../../types';
 import { IndicateModal } from '../IndicateModal/IndicateModal';
@@ -421,6 +422,7 @@ function TryCatchCard({ node, isSelected, isExecuting, onSelect, onDelete }: {
 // ── Sequence canvas ───────────────────────────────────────────────────────────
 
 export function SequenceCanvas() {
+  const historyErrorNodeId = useUiStore((state) => state.historyErrorNodeId);
   const { nodes, addNodeAtIndex, moveNode, deleteNode, selectedNodeId, setSelectedNode, executingNodeId, status, toggleBreakpoint, toggleNodeCollapsed, setAllNodesCollapsed } =
     useWorkflowStore();
   const isPaused = status === 'paused';
@@ -490,7 +492,7 @@ export function SequenceCanvas() {
 
   return (
     <div
-      className="seq-canvas"
+      className={`seq-canvas${historyErrorNodeId && historyErrorNodeId === selectedNodeId ? ' seq-canvas--history-error' : ''}`}
       onDragEnter={handleCanvasDragEnter}
       onDragLeave={handleCanvasDragLeave}
       onDragOver={handleCanvasDragOver}

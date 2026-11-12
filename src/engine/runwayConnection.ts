@@ -48,7 +48,13 @@ function deviceName() {
 }
 
 export function getSavedServerUrl() {
-  return localStorage.getItem(SERVER_URL_KEY) ?? 'http://localhost:5050';
+  const saved = localStorage.getItem(SERVER_URL_KEY);
+  if (!saved) return 'http://10.211.55.2:5050';
+  try {
+    const url = new URL(saved);
+    url.hostname = '10.211.55.2';
+    return url.toString().replace(/\/$/, '');
+  } catch { return 'http://10.211.55.2:5050'; }
 }
 
 export function clearSavedConnection() {

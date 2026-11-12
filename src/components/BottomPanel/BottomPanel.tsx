@@ -3,6 +3,7 @@ import { useWorkflowStore } from '../../store/workflowStore';
 import { useUiStore, type BottomPanelTab } from '../../store/uiStore';
 import type { WorkflowArgument, WorkflowVariable } from '../../types';
 import './BottomPanel.css';
+import { RunHistoryPanel } from './RunHistoryPanel';
 
 type SubTab = 'variables' | 'arguments' | 'namespaces' | 'connections';
 
@@ -124,6 +125,7 @@ export function BottomPanel() {
   const mainTabs = [
     { id: 'dataManager' as BottomPanelTab, label: 'Data Manager' },
     { id: 'output' as BottomPanelTab, label: 'Output' },
+    { id: 'history' as BottomPanelTab, label: 'Run History' },
     { id: 'markers' as BottomPanelTab, label: 'Markers' },
     { id: 'errors' as BottomPanelTab, label: 'Errors' },
   ];
@@ -136,7 +138,7 @@ export function BottomPanel() {
   ];
 
   return (
-    <div className="bottom-panel">
+    <div className={`bottom-panel${mainTab === 'history' ? ' bottom-panel--history' : ''}`}>
       <div className="bp__tab-row">
         <div className="bp__main-tabs">
           {mainTabs.map(({ id, label }) => (
@@ -166,6 +168,7 @@ export function BottomPanel() {
       </div>
 
       <div className="bp__content">
+        {mainTab === 'history' && <RunHistoryPanel />}
         {mainTab === 'dataManager' && subTab === 'variables' && (
           <div className="bp-vars">
             <div className="bp-vars__table">

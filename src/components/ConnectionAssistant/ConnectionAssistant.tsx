@@ -47,7 +47,7 @@ export function ConnectionAssistant({ onConnected }: ConnectionAssistantProps) {
           <input
             value={serverUrl}
             onChange={(event) => setServerUrl(event.target.value)}
-            placeholder="http://localhost:5050"
+            placeholder="http://10.211.55.2:5050"
             type="url"
             autoFocus={!serverUrl}
             onKeyDown={(event) => { if (event.key === 'Enter') void handleConnect(); }}

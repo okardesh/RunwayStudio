@@ -20,43 +20,59 @@ export function Toolbar({ activeTab, onPublish }: ToolbarProps) {
   const [editingName, setEditingName] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const startingRef = useRef(false);
+  const executionRef = useRef<Promise<'completed' | 'stopped' | 'error'> | null>(null);
 
   const isRunning = status === 'running';
   const isPaused = status === 'paused';
   const breakpointCount = nodes.filter((n) => n.data.breakpoint).length;
 
   const startRun = useCallback(async (debug: boolean) => {
-    const store = useWorkflowStore.getState();
-    const uiStore = useUiStore.getState();
-    if (!await saveWorkflow()) {
-      uiStore.setStatusMessage('Workflow was not run because it was not saved.');
-      return;
+    if (startingRef.current || executionRef.current) return;
+    startingRef.current = true;
+    try {
+      const store = useWorkflowStore.getState();
+      const uiStore = useUiStore.getState();
+      if (!await saveWorkflow()) {
+        uiStore.setStatusMessage('Workflow was not run because it was not saved.');
+        return;
+      }
+      uiStore.clearOutput();
+      uiStore.setActiveBottomPanelTab('output');
+      store.setStatus('running');
+      const execution = executeWorkflow(
+        store.nodes,
+        store.edges,
+        store.variables,
+        (id) => useWorkflowStore.getState().setExecutingNodeId(id),
+        (_id) => {},
+        (text, level) => useUiStore.getState().addOutputMessage({ text, level }),
+        {
+          projectName: store.projectName,
+          filePath: useWorkflowStore.getState().filePath,
+          debug,
+          hasBreakpoint: (id) => !!useWorkflowStore.getState().nodes.find((n) => n.id === id)?.data.breakpoint,
+          onPause: (id) => {
+            useWorkflowStore.getState().setStatus('paused');
+            const label = useWorkflowStore.getState().nodes.find((n) => n.id === id)?.data.label ?? id;
+            useUiStore.getState().addOutputMessage({ text: `⏸  Paused at "${label}"`, level: 'Debug' });
+          },
+          onResume: () => useWorkflowStore.getState().setStatus('running'),
+        }
+      );
+      executionRef.current = execution;
+      const result = await execution;
+      useWorkflowStore.getState().setExecutingNodeId(null);
+      useWorkflowStore.getState().setStatus(
+        result === 'completed' ? 'completed' : result === 'stopped' ? 'idle' : 'error'
+      );
+      if (result === 'error') uiStore.setActiveBottomPanelTab('history');
+    } catch (error) {
+      useUiStore.getState().setStatusMessage(error instanceof Error ? error.message : 'Workflow could not be started.');
+    } finally {
+      startingRef.current = false;
+      executionRef.current = null;
     }
-    uiStore.clearOutput();
-    uiStore.setActiveBottomPanelTab('output');
-    store.setStatus('running');
-    const result = await executeWorkflow(
-      store.nodes,
-      store.edges,
-      store.variables,
-      (id) => useWorkflowStore.getState().setExecutingNodeId(id),
-      (_id) => {},
-      (text, level) => useUiStore.getState().addOutputMessage({ text, level }),
-      debug ? {
-        debug: true,
-        hasBreakpoint: (id) => !!useWorkflowStore.getState().nodes.find((n) => n.id === id)?.data.breakpoint,
-        onPause: (id) => {
-          useWorkflowStore.getState().setStatus('paused');
-          const label = useWorkflowStore.getState().nodes.find((n) => n.id === id)?.data.label ?? id;
-          useUiStore.getState().addOutputMessage({ text: `⏸  Paused at "${label}"`, level: 'Debug' });
-        },
-        onResume: () => useWorkflowStore.getState().setStatus('running'),
-      } : undefined
-    );
-    useWorkflowStore.getState().setExecutingNodeId(null);
-    useWorkflowStore.getState().setStatus(
-      result === 'completed' ? 'completed' : result === 'stopped' ? 'idle' : 'error'
-    );
   }, []);
 
   const handleNameBlur = (e: React.FocusEvent<HTMLInputElement>) => {
@@ -70,7 +86,7 @@ export function Toolbar({ activeTab, onPublish }: ToolbarProps) {
   const handleContinue = useCallback(() => resumeDebug('continue'), []);
   const handleStepInto = useCallback(() => resumeDebug('step-into'), []);
   const handleStepOver = useCallback(() => resumeDebug('step-over'), []);
-  const handleRestart = useCallback(() => { requestStop(); setTimeout(() => startRun(true), 60); }, [startRun]);
+  const handleRestart = useCallback(async () => { requestStop(); await executionRef.current; await startRun(true); }, [startRun]);
 
   const handleSave = useCallback(async () => {
     if (await saveWorkflow()) setStatusMessage('Workflow saved.');

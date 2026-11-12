@@ -1,5 +1,6 @@
 ﻿import type { Node, Edge } from 'reactflow';
 import type { WorkflowNodeData, WorkflowVariable } from '../types';
+import { createExecutionTrace } from './executionTrace';
 
 export type LogLevel = 'Info' | 'Warning' | 'Error' | 'Debug';
 export type LogFn = (text: string, level: LogLevel) => void;
@@ -150,6 +151,8 @@ function resolveCollectionValue(value: unknown, values: Record<string, unknown>)
 }
 
 export interface DebugOptions {
+  projectName?: string;
+  filePath?: string | null;
   debug?: boolean;
   hasBreakpoint?: (nodeId: string) => boolean;
   onPause?: (nodeId: string) => void;
@@ -158,16 +161,50 @@ export interface DebugOptions {
 
 export async function executeWorkflow(
   nodes: Node<WorkflowNodeData>[],
-  _edges: Edge[],
+  edges: Edge[],
   variables: WorkflowVariable[],
   onNodeStart: (id: string) => void,
-  onNodeEnd:   (id: string) => void,
+  onNodeEnd: (id: string) => void,
   onLog: LogFn,
+  debugOptions?: DebugOptions
+): Promise<'completed' | 'stopped' | 'error'> {
+  const trace = createExecutionTrace(nodes, variables, debugOptions);
+  try {
+    const result = await executeWorkflowCore(nodes, edges, variables, onNodeStart, onNodeEnd, onLog, trace, debugOptions);
+    await trace.finish(result);
+    return result;
+  } catch (error) {
+    onLog(error instanceof Error ? error.message : String(error), 'Error');
+    await trace.finish('error', error);
+    return 'error';
+  }
+}
+
+async function executeWorkflowCore(
+  nodes: Node<WorkflowNodeData>[],
+  _edges: Edge[],
+  variables: WorkflowVariable[],
+  notifyStart: (id: string) => void,
+  notifyEnd:   (id: string) => void,
+  notifyLog: LogFn,
+  trace: ReturnType<typeof createExecutionTrace>,
   debugOptions?: DebugOptions
 ): Promise<'completed' | 'stopped' | 'error'> {
   _stopRequested = false;
   const values: Record<string, unknown> = Object.fromEntries(variables.map((variable) => [variable.name, variable.defaultValue]));
+  const onNodeStart = (id: string) => { trace.start(id, values); notifyStart(id); };
+  const onNodeEnd = (id: string) => { trace.end(id, _stopRequested); notifyEnd(id); };
+  const onLog: LogFn = (text, level) => { if (level === 'Error') trace.error(text); notifyLog(text, level); };
   const runWithValues = async (activityId: string, properties: Record<string, unknown>) => {
+    trace.inputs(resolveProperties(properties, values));
+    let success = false;
+    try { success = await runWithValuesCore(activityId, properties); }
+    catch (error) { onLog(error instanceof Error ? error.message : String(error), 'Error'); }
+    trace.outputs(values);
+    if (!success) { trace.error('Activity failed. See error details in Output.'); await trace.captureFailure(); }
+    return success;
+  };
+  const runWithValuesCore = async (activityId: string, properties: Record<string, unknown>) => {
     if (activityId === 'create-list') {
       const output = getCollectionVariableName(properties.output);
       if (!output) return false;

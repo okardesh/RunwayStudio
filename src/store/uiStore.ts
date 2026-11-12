@@ -7,7 +7,7 @@ export interface OutputMessage {
   timestamp: string;
 }
 
-export type BottomPanelTab = 'dataManager' | 'output' | 'markers' | 'errors';
+export type BottomPanelTab = 'dataManager' | 'output' | 'markers' | 'errors' | 'history';
 
 interface UiState {
   activitySearchQuery: string;
@@ -17,6 +17,7 @@ interface UiState {
   recorderOpen: boolean;
   outputMessages: OutputMessage[];
   statusMessage: string | null;
+  historyErrorNodeId: string | null;
 
   setActivitySearchQuery: (query: string) => void;
   toggleCategory: (categoryId: string) => void;
@@ -36,6 +37,7 @@ export const useUiStore = create<UiState>((set) => ({
   recorderOpen: false,
   outputMessages: [],
   statusMessage: null,
+  historyErrorNodeId: null,
 
   setActivitySearchQuery: (query) => set({ activitySearchQuery: query }),
 
