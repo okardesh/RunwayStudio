@@ -14,6 +14,8 @@ import {
 import { v4 as uuidv4 } from 'uuid';
 import type { WorkflowArgument, WorkflowBranch, WorkflowNodeData, WorkflowVariable, WorkflowStatus } from '../types';
 import { getActivity } from '../activities/registry';
+import { useUiTargetStore } from './uiTargetStore';
+import type { UiTarget } from '../shared/uiTargets';
 
 const createInitialNodes = (): Node<WorkflowNodeData>[] => [];
 
@@ -57,6 +59,7 @@ interface WorkflowState {
   moveChildNode: (parentId: string, from: number, to: number) => void;
   deleteNode: (nodeId: string) => void;
   updateNodeProperties: (nodeId: string, properties: Record<string, unknown>) => void;
+  bindUiTarget: (nodeId: string, property: string, targetId: string | null) => void;
   configureForEach: (nodeId: string, collection: string) => void;
   renameForEachVariable: (nodeId: string, name: string) => void;
   toggleBreakpoint: (nodeId: string) => void;
@@ -73,7 +76,7 @@ interface WorkflowState {
   setProjectName: (name: string) => void;
   clearWorkflow: () => void;
   setExecutingNodeId: (id: string | null) => void;
-  loadWorkflow: (data: { nodes: Node<WorkflowNodeData>[]; edges: Edge[]; variables: WorkflowVariable[]; arguments?: WorkflowArgument[]; projectName: string }, filePath?: string | null) => void;
+  loadWorkflow: (data: { nodes: Node<WorkflowNodeData>[]; edges: Edge[]; variables: WorkflowVariable[]; arguments?: WorkflowArgument[]; projectName: string; uiTargets?: UiTarget[] }, filePath?: string | null) => void;
   setFilePath: (filePath: string | null) => void;
   copySelectedNode: () => void;
   cutSelectedNode: () => void;
@@ -498,6 +501,18 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
     })),
 
   setSelectedNode: (nodeId) => set({ selectedNodeId: nodeId }),
+  bindUiTarget: (nodeId, property, targetId) => set((state) => {
+    const target = targetId ? useUiTargetStore.getState().targets.find((t) => t.id === targetId) : null;
+    if (targetId && !target) throw new Error('UI target not found.');
+    return { isDirty: true, nodes: state.nodes.map((node) => {
+      if (node.id !== nodeId) return node;
+      const bindings = { ...node.data.targetBindings };
+      const previous = useUiTargetStore.getState().targets.find((t) => t.id === bindings[property]);
+      if (targetId) bindings[property] = targetId; else delete bindings[property];
+      return { ...node, data: { ...node.data, targetBindings: bindings,
+        properties: { ...node.data.properties, [property]: target?.selector ?? previous?.selector ?? node.data.properties[property] ?? '' } } };
+    }) };
+  }),
 
   addVariable: (variable) =>
     set((state) => ({
@@ -554,7 +569,8 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
 
   setExecutingNodeId: (id) => set({ executingNodeId: id }),
 
-  loadWorkflow: (data, filePath = null) =>
+  loadWorkflow: (data, filePath = null) => {
+    if (data.uiTargets) useUiTargetStore.getState().importMissing(data.uiTargets);
     set({
       nodes: data.nodes,
       edges: data.edges,
@@ -566,7 +582,8 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
       status: 'idle',
       filePath,
       isDirty: false,
-    }),
+    });
+  },
 
   setFilePath: (filePath) => set({ filePath }),
 

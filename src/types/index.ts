@@ -40,6 +40,7 @@ export interface WorkflowNodeData {
   icon: string;
   color: string;
   properties: Record<string, unknown>;
+  targetBindings?: Record<string, string>; // selector property -> shared UI target ID
   childIds?: string[];   // ordered child node IDs (for container activities)
   parentId?: string;     // set on child nodes so the canvas can exclude them from the top level
   branchId?: string;     // identifies the owning branch when the parent is an If activity

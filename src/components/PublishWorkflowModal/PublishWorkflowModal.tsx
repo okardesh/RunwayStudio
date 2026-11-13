@@ -4,6 +4,8 @@ import type { WorkflowArgument, WorkflowNodeData, WorkflowVariable } from '../..
 import { publishRpaWorkflow, type PublishedRpaWorkflow, type RpaWorkflowArgument } from '../../engine/rpaWorkflowClient';
 import type { RunwayConnection } from '../../engine/runwayConnection';
 import './PublishWorkflowModal.css';
+import { useUiTargetStore } from '../../store/uiTargetStore';
+import { referencedTargets, resolveTargetBindings } from '../../shared/uiTargets';
 
 type PublishState = 'idle' | 'publishing' | 'published' | 'failed';
 
@@ -44,13 +46,15 @@ export function PublishWorkflowModal({ connection, projectName, nodes, edges, va
     setState('publishing');
     setError('');
     try {
+      const targets = useUiTargetStore.getState().targets;
       const workflow = await publishRpaWorkflow(connection, {
         name: name.trim(),
         version: version.trim() || '1.0.0',
         description: description.trim(),
         inputArguments,
         outputArguments,
-        definition: { nodes, edges, variables, arguments: workflowArguments },
+        definition: { nodes: resolveTargetBindings(nodes, targets), edges, variables, arguments: workflowArguments,
+          uiTargets: referencedTargets(nodes, targets) },
       });
       setPublished(workflow);
       setVersion(workflow.version);

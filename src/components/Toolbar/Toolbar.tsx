@@ -272,6 +272,7 @@ export function Toolbar({ activeTab, onPublish }: ToolbarProps) {
             <span className="rbn-btn__label">Output</span>
           </button>
           <button className={`rbn-btn${activeBottomPanelTab === 'history' ? ' active' : ''}`} onClick={() => setActiveBottomPanelTab('history')} title="Show Run History"><Icon name="history" /><span className="rbn-btn__label">History</span></button>
+          <button className={`rbn-btn${activeBottomPanelTab === 'targets' ? ' active' : ''}`} onClick={() => setActiveBottomPanelTab('targets')} title="Show UI Targets"><Icon name="cursor" /><span className="rbn-btn__label">Targets</span></button>
         </div>
         <span className="ribbon__group-label">View</span>
       </div>

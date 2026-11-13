@@ -1,4 +1,6 @@
 import { useWorkflowStore } from '../store/workflowStore';
+import { useUiTargetStore } from '../store/uiTargetStore';
+import { referencedTargets, resolveTargetBindings } from '../shared/uiTargets';
 
 const isElectron = () =>
   typeof window !== 'undefined' && 'electronAPI' in window && typeof (window as any).electronAPI?.saveWorkflow === 'function';
@@ -7,7 +9,9 @@ const isElectron = () =>
 // otherwise prompts once via a native Save dialog and remembers the choice.
 export async function saveWorkflow(): Promise<boolean> {
   const { nodes, edges, variables, arguments: workflowArguments, projectName: name, filePath } = useWorkflowStore.getState();
-  const content = JSON.stringify({ nodes, edges, variables, arguments: workflowArguments, projectName: name }, null, 2);
+  const targets = useUiTargetStore.getState().targets;
+  const content = JSON.stringify({ nodes: resolveTargetBindings(nodes, targets, false), edges, variables,
+    arguments: workflowArguments, projectName: name, uiTargets: referencedTargets(nodes, targets) }, null, 2);
   const defaultName = `${name.replace(/\s+/g, '_')}.rpa.json`;
 
   if (isElectron()) {

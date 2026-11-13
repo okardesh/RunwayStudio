@@ -15,6 +15,8 @@ import './App.css';
 import { Icon, RunwayMark } from './components/Icon';
 import { ThemeSwitcher } from './components/ThemeSwitcher';
 import { applyStudioTheme, useThemeStore } from './store/themeStore';
+import { useUiTargetStore } from './store/uiTargetStore';
+import { resolveTargetBindings } from './shared/uiTargets';
 
 type Tab = 'design' | 'debug';
 
@@ -32,6 +34,19 @@ function App() {
   const edges = useWorkflowStore((s) => s.edges);
   const variables = useWorkflowStore((s) => s.variables);
   const workflowArguments = useWorkflowStore((s) => s.arguments);
+  const filePath = useWorkflowStore((s) => s.filePath);
+  const sharedTargets = useUiTargetStore((s) => s.targets);
+  useEffect(() => {
+    const current = useWorkflowStore.getState();
+    const resolved = resolveTargetBindings(current.nodes, sharedTargets, false);
+    if (resolved.some((node, index) => JSON.stringify(node.data.properties) !== JSON.stringify(current.nodes[index].data.properties))) {
+      useWorkflowStore.setState({ nodes: resolved, isDirty: true });
+    }
+  }, [sharedTargets, nodes]);
+  useEffect(() => {
+    try { useUiTargetStore.getState().indexWorkflow(nodes, projectName, filePath); }
+    catch (error) { useUiStore.getState().setStatusMessage(error instanceof Error ? error.message : 'Could not index UI targets.'); }
+  }, [nodes, projectName, filePath]);
   const activitySearch = useUiStore((s) => s.activitySearchQuery);
   const setActivitySearch = useUiStore((s) => s.setActivitySearchQuery);
 

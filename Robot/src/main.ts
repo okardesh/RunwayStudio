@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { executeActivity } from '../../electron/automation/index.js';
 import { resolveLogMessage } from '../../src/shared/logMessageExpression';
+import { resolveTargetBindings, type UiTarget } from '../../src/shared/uiTargets';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.join(__dirname, '..');
@@ -28,9 +29,9 @@ type LicenseResponse = {
   message?: string;
   error?: string;
 };
-type WorkflowNode = { id: string; data?: { activityId?: string; label?: string; properties?: Record<string, unknown>; childIds?: string[]; parentId?: string } };
+type WorkflowNode = { id: string; data?: { activityId?: string; label?: string; properties?: Record<string, unknown>; childIds?: string[]; parentId?: string; targetBindings?: Record<string, string> } };
 type Trigger = { jobId: string; workflowId?: string; workflow?: { definition?: WorkflowDefinition } | WorkflowDefinition; definition?: WorkflowDefinition; inputs?: Record<string, unknown>; callbackUrl: string };
-type WorkflowDefinition = { nodes?: WorkflowNode[]; edges?: unknown[]; variables?: Array<{ name: string; defaultValue?: unknown }> };
+type WorkflowDefinition = { nodes?: WorkflowNode[]; edges?: unknown[]; variables?: Array<{ name: string; defaultValue?: unknown }>; uiTargets?: UiTarget[] };
 type JobLog = { timestamp: string; level: 'info' | 'error'; message: string };
 
 let tray: Tray | null = null;
@@ -138,7 +139,7 @@ function send(response: ServerResponse, status: number, body: unknown) {
 }
 function log(logs: JobLog[], level: JobLog['level'], message: string) { logs.push({ timestamp: new Date().toISOString(), level, message }); }
 async function executeWorkflow(definition: WorkflowDefinition, inputs: Record<string, unknown>, logs: JobLog[]) {
-  const nodes = definition.nodes ?? [];
+  const nodes = resolveTargetBindings(definition.nodes ?? [], definition.uiTargets ?? []);
   const values: Record<string, unknown> = Object.fromEntries((definition.variables ?? []).map((variable) => [variable.name, variable.defaultValue]));
   Object.assign(values, inputs);
   const nodesById = new Map(nodes.map((node) => [node.id, node]));

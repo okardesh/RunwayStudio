@@ -2,6 +2,8 @@
 import type { WorkflowNodeData, WorkflowVariable } from '../types';
 import { createExecutionTrace } from './executionTrace';
 import { resolveLogMessage } from '../shared/logMessageExpression';
+import { resolveTargetBindings } from '../shared/uiTargets';
+import { useUiTargetStore } from '../store/uiTargetStore';
 
 export type LogLevel = 'Info' | 'Warning' | 'Error' | 'Debug';
 export type LogFn = (text: string, level: LogLevel) => void;
@@ -171,7 +173,8 @@ export async function executeWorkflow(
 ): Promise<'completed' | 'stopped' | 'error'> {
   const trace = createExecutionTrace(nodes, variables, debugOptions);
   try {
-    const result = await executeWorkflowCore(nodes, edges, variables, onNodeStart, onNodeEnd, onLog, trace, debugOptions);
+    const resolvedNodes = resolveTargetBindings(nodes, useUiTargetStore.getState().targets);
+    const result = await executeWorkflowCore(resolvedNodes, edges, variables, onNodeStart, onNodeEnd, onLog, trace, debugOptions);
     await trace.finish(result);
     return result;
   } catch (error) {

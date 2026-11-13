@@ -8,6 +8,7 @@ import { DesktopPickerModal } from '../Recorder/DesktopPickerModal';
 import { ExpressionInput } from './ExpressionInput';
 import './PropertiesPanel.css';
 import { Icon } from '../Icon';
+import { TargetSelector } from '../UiTargets/TargetSelector';
 
 // ── Properties Content (UiPath property grid style) ──────────────────────────
 
@@ -152,6 +153,7 @@ function PropertiesContent() {
       prop.label.toLowerCase().includes('selector');
     if (isSelectorField) {
       return (
+        <TargetSelector nodeId={selectedNode.id} property={prop.name} targetType={String(props[prop.name] || '').startsWith('window:') ? 'desktop' : ancestorTargetType} application={ancestorWindowTitle}>
         <div className="pgrid-input-row">
           <ExpressionInput
             value={String(props[prop.name] ?? prop.defaultValue ?? '')}
@@ -161,6 +163,7 @@ function PropertiesContent() {
           />
           <button className="pgrid-pick-btn" onClick={() => setRecorderFor(prop.name)} title="Pick element"><Icon name="cursor" size={15} /></button>
         </div>
+        </TargetSelector>
       );
     }
     if (prop.type === 'expression' || prop.type === 'string') {

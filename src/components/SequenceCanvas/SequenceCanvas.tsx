@@ -9,6 +9,10 @@ import { IndicateModal } from '../IndicateModal/IndicateModal';
 import { ExpressionInput } from '../PropertiesPanel/ExpressionInput';
 import './SequenceCanvas.css';
 import { Icon, ActivityGlyph } from '../Icon';
+import { useUiTargetStore } from '../../store/uiTargetStore';
+import { resolveTargetBindings } from '../../shared/uiTargets';
+
+const displayProperties = (node: Node<WorkflowNodeData>) => resolveTargetBindings([node], useUiTargetStore.getState().targets, false)[0].data.properties;
 
 // ── Container card (Use Application/Browser) ─────────────────────────────────
 
@@ -183,7 +187,7 @@ function ContainerCard({
                     <span className="seq-card__name">{child.data.label}</span>
                     {!childIsCollapsed && (() => {
                       const act = getActivity(child.data.activityId);
-                      const hint = act?.properties.map((p) => child.data.properties[p.name]).find((v) => v && String(v).trim());
+                      const hint = act?.properties.map((p) => displayProperties(child)[p.name]).find((v) => v && String(v).trim());
                       return hint ? <span className="seq-card__hint">{String(hint)}</span> : null;
                     })()}
                   </div>
@@ -423,6 +427,7 @@ function TryCatchCard({ node, isSelected, isExecuting, onSelect, onDelete }: {
 // ── Sequence canvas ───────────────────────────────────────────────────────────
 
 export function SequenceCanvas() {
+  useUiTargetStore((state) => state.targets);
   const historyErrorNodeId = useUiStore((state) => state.historyErrorNodeId);
   const { nodes, addNodeAtIndex, moveNode, deleteNode, selectedNodeId, setSelectedNode, executingNodeId, status, toggleBreakpoint, toggleNodeCollapsed, setAllNodesCollapsed } =
     useWorkflowStore();
@@ -620,7 +625,7 @@ export function SequenceCanvas() {
                         <span className="seq-card__name">{node.data.label}</span>
                         {!isCollapsed && (() => {
                           const hint = activity?.properties
-                            .map((p) => node.data.properties[p.name])
+                            .map((p) => displayProperties(node)[p.name])
                             .find((v) => v && String(v).trim());
                           return hint ? <span className="seq-card__hint">{String(hint)}</span> : null;
                         })()}
