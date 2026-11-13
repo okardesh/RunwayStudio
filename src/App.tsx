@@ -51,7 +51,7 @@ function App() {
   const setActivitySearch = useUiStore((s) => s.setActivitySearchQuery);
 
   // Toolbar reacts to activeTab itself (starts/stops the debug run) — this just switches views.
-  const handleTabChange = (tab: Tab) => setActiveTab(tab);
+  const handleTabChange = (tab: Tab) => { setActiveTab(tab); if (tab === 'debug') useUiStore.getState().setActiveBottomPanelTab('debug'); };
 
   useEffect(() => {
     if (!runwayConnection) return;

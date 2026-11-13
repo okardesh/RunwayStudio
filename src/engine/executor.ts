@@ -4,6 +4,8 @@ import { createExecutionTrace } from './executionTrace';
 import { resolveLogMessage } from '../shared/logMessageExpression';
 import { resolveTargetBindings } from '../shared/uiTargets';
 import { useUiTargetStore } from '../store/uiTargetStore';
+import { createLiveDebugger } from './liveDebugger';
+import { useDebugStore } from '../store/debugStore';
 
 export type LogLevel = 'Info' | 'Warning' | 'Error' | 'Debug';
 export type LogFn = (text: string, level: LogLevel) => void;
@@ -171,13 +173,17 @@ export async function executeWorkflow(
   onLog: LogFn,
   debugOptions?: DebugOptions
 ): Promise<'completed' | 'stopped' | 'error'> {
+  const live = debugOptions?.debug ? createLiveDebugger(debugOptions.projectName || 'Workflow', nodes, variables) : undefined;
+  if (!live) useDebugStore.getState().clearSession();
   const trace = createExecutionTrace(nodes, variables, debugOptions);
   try {
     const resolvedNodes = resolveTargetBindings(nodes, useUiTargetStore.getState().targets);
-    const result = await executeWorkflowCore(resolvedNodes, edges, variables, onNodeStart, onNodeEnd, onLog, trace, debugOptions);
+    const result = await executeWorkflowCore(resolvedNodes, edges, variables, onNodeStart, onNodeEnd, onLog, trace, debugOptions, live);
+    live?.finish(result);
     await trace.finish(result);
     return result;
   } catch (error) {
+    live?.finish('error');
     onLog(error instanceof Error ? error.message : String(error), 'Error');
     await trace.finish('error', error);
     return 'error';
@@ -192,12 +198,15 @@ async function executeWorkflowCore(
   notifyEnd:   (id: string) => void,
   notifyLog: LogFn,
   trace: ReturnType<typeof createExecutionTrace>,
-  debugOptions?: DebugOptions
+  debugOptions?: DebugOptions,
+  live?: ReturnType<typeof createLiveDebugger>
 ): Promise<'completed' | 'stopped' | 'error'> {
   _stopRequested = false;
   const values: Record<string, unknown> = Object.fromEntries(variables.map((variable) => [variable.name, variable.defaultValue]));
-  const onNodeStart = (id: string) => { trace.start(id, values); notifyStart(id); };
-  const onNodeEnd = (id: string) => { trace.end(id, _stopRequested); notifyEnd(id); };
+  let currentNodeId: string | null = null;
+  live?.capture(values, null);
+  const onNodeStart = (id: string) => { currentNodeId = id; live?.capture(values, id); trace.start(id, values); notifyStart(id); };
+  const onNodeEnd = (id: string) => { live?.capture(values, id); trace.end(id, _stopRequested); notifyEnd(id); };
   const onLog: LogFn = (text, level) => { if (level === 'Error') trace.error(text); notifyLog(text, level); };
   const runWithValues = async (activityId: string, properties: Record<string, unknown>) => {
     const inputs = resolveProperties(properties, values);
@@ -206,6 +215,7 @@ async function executeWorkflowCore(
     let success = false;
     try { success = await runWithValuesCore(activityId, properties); }
     catch (error) { onLog(error instanceof Error ? error.message : String(error), 'Error'); }
+    live?.capture(values, currentNodeId, 'running', true);
     trace.outputs(values);
     if (!success) { trace.error('Activity failed. See error details in Output.'); await trace.captureFailure(); }
     return success;
@@ -273,8 +283,11 @@ async function executeWorkflowCore(
       (pendingStep === 'step-over' && depth <= stepOverBaseDepth);
     if (!shouldPause) return;
 
+    const paused = new Promise<StepMode>((resolve) => { _resumeResolver = resolve; });
+    live?.capture(values, nodeId, 'paused');
     debugOptions?.onPause?.(nodeId);
-    const mode = await new Promise<StepMode>((resolve) => { _resumeResolver = resolve; });
+    const mode = await paused;
+    live?.capture(values, nodeId, 'running');
     debugOptions?.onResume?.();
 
     if (mode === 'continue') pendingStep = 'run';
@@ -338,6 +351,7 @@ async function executeWorkflowCore(
         let shouldBreakLoop = false;
         for (const item of items) {
           values[loopVariable.name] = item;
+          live?.capture(values, node.id);
           for (const child of children) {
             if (_stopRequested) {
               if (hadPreviousValue) values[loopVariable.name] = previousValue;

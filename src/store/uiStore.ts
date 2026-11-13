@@ -7,7 +7,7 @@ export interface OutputMessage {
   timestamp: string;
 }
 
-export type BottomPanelTab = 'dataManager' | 'output' | 'markers' | 'errors' | 'history' | 'targets';
+export type BottomPanelTab = 'dataManager' | 'output' | 'markers' | 'errors' | 'history' | 'targets' | 'debug';
 
 export interface UiTargetDraft { nodeId: string; property: string; selector: string; application: string; name: string; targetType: 'browser' | 'desktop' }
 

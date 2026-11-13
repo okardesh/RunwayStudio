@@ -39,7 +39,7 @@ export function Toolbar({ activeTab, onPublish }: ToolbarProps) {
         return;
       }
       uiStore.clearOutput();
-      uiStore.setActiveBottomPanelTab('output');
+      uiStore.setActiveBottomPanelTab(debug ? 'debug' : 'output');
       store.setStatus('running');
       const execution = executeWorkflow(
         store.nodes,
@@ -54,6 +54,7 @@ export function Toolbar({ activeTab, onPublish }: ToolbarProps) {
           debug,
           hasBreakpoint: (id) => !!useWorkflowStore.getState().nodes.find((n) => n.id === id)?.data.breakpoint,
           onPause: (id) => {
+            useUiStore.getState().setActiveBottomPanelTab('debug');
             useWorkflowStore.getState().setStatus('paused');
             const label = useWorkflowStore.getState().nodes.find((n) => n.id === id)?.data.label ?? id;
             useUiStore.getState().addOutputMessage({ text: `⏸  Paused at "${label}"`, level: 'Debug' });
@@ -67,7 +68,7 @@ export function Toolbar({ activeTab, onPublish }: ToolbarProps) {
       useWorkflowStore.getState().setStatus(
         result === 'completed' ? 'completed' : result === 'stopped' ? 'idle' : 'error'
       );
-      if (result === 'error') uiStore.setActiveBottomPanelTab('history');
+      if (result === 'error' && !debug) uiStore.setActiveBottomPanelTab('history');
     } catch (error) {
       useUiStore.getState().setStatusMessage(error instanceof Error ? error.message : 'Workflow could not be started.');
     } finally {
@@ -273,6 +274,7 @@ export function Toolbar({ activeTab, onPublish }: ToolbarProps) {
           </button>
           <button className={`rbn-btn${activeBottomPanelTab === 'history' ? ' active' : ''}`} onClick={() => setActiveBottomPanelTab('history')} title="Show Run History"><Icon name="history" /><span className="rbn-btn__label">History</span></button>
           <button className={`rbn-btn${activeBottomPanelTab === 'targets' ? ' active' : ''}`} onClick={() => setActiveBottomPanelTab('targets')} title="Show UI Targets"><Icon name="cursor" /><span className="rbn-btn__label">Targets</span></button>
+          {activeTab === 'debug' && <button className={`rbn-btn${activeBottomPanelTab === 'debug' ? ' active' : ''}`} onClick={() => setActiveBottomPanelTab('debug')} title="Show Locals and Watch"><Icon name="code" /><span className="rbn-btn__label">Locals</span></button>}
         </div>
         <span className="ribbon__group-label">View</span>
       </div>
