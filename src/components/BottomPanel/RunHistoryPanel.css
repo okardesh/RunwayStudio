@@ -34,6 +34,10 @@ span.rh-status { background: transparent; }
 .rh-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f7f7f7; padding: 8px; border: 1px solid #edebe9; font: 11px Consolas, monospace; }
 .rh-detail details { margin: 8px 0; }
 .rh-detail summary { cursor: pointer; }
+.rh-test-results { border: 1px solid var(--studio-border); border-radius: 6px; padding: 10px; margin-bottom: 12px; }
+.rh-test-results > small { display: block; margin-top: 5px; color: var(--studio-muted); }
+.rh-run .rh-test-label.te-status--failed, .rh-run .rh-test-label.te-status--error { color: var(--studio-red); }
+.rh-run .rh-test-label.te-status--passed { color: var(--studio-green); }
 .rh-error { color: #a4262c; background: #fde7e9; border-left: 3px solid #a4262c; padding: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .rh-notice { padding: 6px 10px; background: #fff4ce; color: #605000; font-size: 11px; }
 .rh-image { display: block; padding: 0; border: 1px solid #c8c6c4; background: #fff; margin: 8px 0; }

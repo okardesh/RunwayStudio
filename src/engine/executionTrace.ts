@@ -1,12 +1,15 @@
 import type { Node } from 'reactflow';
 import type { WorkflowNodeData, WorkflowVariable } from '../types';
 import { snapshot, useExecutionHistoryStore, type ExecutionRun, type ExecutionStep } from '../store/executionHistoryStore';
+import { assertTestValues, type TestExecution } from '../shared/workflowTests';
 
-export function createExecutionTrace(nodes: Node<WorkflowNodeData>[], variables: WorkflowVariable[], meta?: { projectName?: string; filePath?: string | null; debug?: boolean }) {
+export function createExecutionTrace(nodes: Node<WorkflowNodeData>[], variables: WorkflowVariable[], meta?: { projectName?: string; filePath?: string | null; debug?: boolean; test?: TestExecution }) {
   const run: ExecutionRun = {
     id: crypto.randomUUID(), projectName: meta?.projectName || 'Workflow', filePath: meta?.filePath ?? null,
     startedAt: Date.now(), status: 'running', debug: !!meta?.debug, steps: [],
   };
+  if (meta?.test) { const { expected: _expected, ...identity } = meta.test; run.test = { ...identity, status: 'running', assertions: [] }; }
+  let runtimeValues: Record<string, unknown> = {};
   const secrets = variables.filter((v) => /password|secret|token|api.?key|credential/i.test(v.name)).map((v) => String(v.defaultValue)).filter(Boolean);
   for (const node of nodes) for (const [key, value] of Object.entries(node.data.properties)) {
     if (/password|secret|token|api.?key|credential|authorization/i.test(key) && typeof value === 'string' && !value.includes('{{')) secrets.push(value);
@@ -32,6 +35,7 @@ export function createExecutionTrace(nodes: Node<WorkflowNodeData>[], variables:
   };
   publish();
   return {
+    runtime(values: Record<string, unknown>) { runtimeValues = values; collectSecrets(values); },
     start(id: string, values: Record<string, unknown>) {
       collectSecrets(values);
       const node = nodes.find((n) => n.id === id);
@@ -87,6 +91,11 @@ export function createExecutionTrace(nodes: Node<WorkflowNodeData>[], variables:
         run.error = touched?.error || 'Workflow could not be executed.';
       }
       run.status = status; run.endedAt = Date.now();
+      if (run.test && meta?.test) {
+        const assertions = status === 'completed' ? assertTestValues(meta.test.expected, runtimeValues, secrets) : [];
+        run.test = { ...run.test, status: status === 'completed' ? assertions.every((a) => a.passed) ? 'passed' : 'failed' : status, assertions };
+      }
+      runtimeValues = {};
       for (const step of active.values()) { step.status = status === 'completed' ? 'completed' : status; step.endedAt = run.endedAt; }
       publish(true);
     },

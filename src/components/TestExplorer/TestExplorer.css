@@ -1,0 +1,40 @@
+.app .bottom-panel.bottom-panel--tests { height: clamp(340px, 46vh, 560px); }
+.test-explorer { height: 100%; min-height: 0; display: flex; flex-direction: column; font: 11px var(--studio-font); color: var(--studio-text); }
+.te-toolbar, .te-editor-toolbar, .te-row-picker { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.te-toolbar { padding: 9px 14px; border-bottom: 1px solid var(--studio-border); }
+.te-toolbar > svg { color: var(--studio-blue); }
+.te-workflow { color: var(--studio-muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.test-explorer button { display: inline-flex; align-items: center; gap: 5px; font: inherit; color: var(--studio-blue); background: var(--studio-surface); border: 1px solid var(--studio-border); border-radius: 5px; padding: 6px 9px; cursor: pointer; }
+.test-explorer button:hover { background: var(--studio-hover); }
+.test-explorer button:disabled { cursor: default; opacity: .45; }
+.test-explorer button:focus-visible, .test-explorer input:focus-visible, .test-explorer select:focus-visible, .test-explorer textarea:focus-visible { outline: 2px solid var(--studio-blue); outline-offset: -1px; }
+.te-columns { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(150px, 17%) minmax(0, 1fr) minmax(190px, 23%); }
+.te-list, .te-editor, .te-results { min-width: 0; overflow: auto; }
+.te-list, .te-editor { border-right: 1px solid var(--studio-border); }
+.te-list > button, .te-results > button { width: 100%; display: flex; align-items: flex-start; flex-direction: column; border: 0; border-bottom: 1px solid var(--studio-border); border-radius: 0; background: transparent; padding: 12px; text-align: left; overflow-wrap: anywhere; }
+.te-list > button strong, .te-results > button strong { color: var(--studio-text); font-weight: 550; }
+.te-list > button span, .te-results > button time { color: var(--studio-muted); font-size: 10px; }
+.te-list > button.te-selected { background: var(--studio-selection); box-shadow: inset 2px 0 var(--studio-blue); }
+.te-editor { padding: 12px; }
+.test-explorer label { display: flex; flex-direction: column; gap: 6px; color: var(--studio-muted); font-size: 10px; }
+.test-explorer input, .test-explorer select, .test-explorer textarea { color: var(--studio-text); background: var(--studio-bg); border: 1px solid var(--studio-border); border-radius: 5px; padding: 7px; min-width: 0; font: 11px var(--studio-font); box-sizing: border-box; }
+.te-editor-toolbar > label { flex: 1; min-width: 130px; }
+.te-row-picker { margin: 12px 0; }
+.te-row-picker label { flex: 1; min-width: 100px; }
+.te-row-picker span { font-size: 10px; color: var(--studio-subtle); }
+.te-row-name { margin-bottom: 12px; }
+.te-json-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.test-explorer textarea { width: 100%; min-height: 105px; resize: vertical; font: 11px/1.6 var(--studio-mono); }
+.te-results > header { padding: 10px 12px; border-bottom: 1px solid var(--studio-border); font-weight: 550; }
+.te-results > header span { display: block; color: var(--studio-muted); font-size: 10px; font-weight: 400; margin-top: 5px; }
+.te-status--passed { color: var(--studio-green); }
+.te-status--failed, .te-status--error { color: var(--studio-red); }
+.te-status--stopped { color: var(--studio-warning); }
+.te-status--running { color: var(--studio-blue); }
+.te-error, .te-progress { padding: 7px 14px; border-bottom: 1px solid var(--studio-border); }
+.te-error { color: var(--studio-red); background: var(--studio-danger-tint); }
+.te-progress { color: var(--studio-muted); }
+.te-live-dot { display: inline-block; width: 6px; height: 6px; background: var(--studio-green); border-radius: 50%; margin-right: 7px; }
+.te-empty, .te-help { color: var(--studio-muted); line-height: 1.6; padding: 12px; margin: 0; overflow-wrap: anywhere; }
+.te-help { padding: 10px 0 0; font-size: 10px; }
+@media (max-width: 1100px) { .te-columns { grid-template-columns: 150px minmax(0, 1fr) 190px; } .te-json-fields { grid-template-columns: 1fr; } }

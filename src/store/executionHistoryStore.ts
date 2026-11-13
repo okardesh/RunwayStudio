@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { TestRunResult } from '../shared/workflowTests';
 
 export type RunStatus = 'running' | 'completed' | 'error' | 'stopped' | 'interrupted';
 export interface ExecutionStep {
@@ -26,6 +27,7 @@ export interface ExecutionRun {
   steps: ExecutionStep[];
   error?: string;
   truncated?: boolean;
+  test?: TestRunResult;
 }
 
 const KEY = 'runway.execution-history.v1';
@@ -36,6 +38,7 @@ function loadRuns(): ExecutionRun[] {
     if (!Array.isArray(runs)) return [];
     return runs.filter((r) => typeof r.id === 'string' && Array.isArray(r.steps) && typeof r.startedAt === 'number')
       .slice(0, 20).map((r) => ({ ...r, status: r.status === 'running' ? 'interrupted' : r.status,
+        ...(r.test ? { test: { ...r.test, status: r.test.status === 'running' ? 'stopped' : r.test.status } } : {}),
         steps: r.steps.map((s: ExecutionStep) => ({ ...s, status: s.status === 'running' ? 'interrupted' : s.status })) }));
   } catch { return []; }
 }

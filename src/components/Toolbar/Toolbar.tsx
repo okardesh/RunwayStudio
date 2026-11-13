@@ -1,7 +1,8 @@
 import { useCallback, useRef, useState } from 'react';
 import { useWorkflowStore } from '../../store/workflowStore';
 import { useUiStore } from '../../store/uiStore';
-import { executeWorkflow, requestStop, resumeDebug } from '../../engine/executor';
+import { executeWorkflow, isWorkflowExecuting, requestStop, resumeDebug } from '../../engine/executor';
+import { useTestExplorerStore } from '../../store/testExplorerStore';
 import { saveWorkflow, openWorkflow } from '../../engine/fileOps';
 import './Toolbar.css';
 import { Icon } from '../Icon';
@@ -30,6 +31,10 @@ export function Toolbar({ activeTab, onPublish }: ToolbarProps) {
 
   const startRun = useCallback(async (debug: boolean) => {
     if (startingRef.current || executionRef.current) return;
+    if (isWorkflowExecuting() || useTestExplorerStore.getState().active) {
+      useUiStore.getState().setStatusMessage('Stop the current run before starting another workflow.');
+      return;
+    }
     startingRef.current = true;
     try {
       const store = useWorkflowStore.getState();
@@ -39,6 +44,7 @@ export function Toolbar({ activeTab, onPublish }: ToolbarProps) {
         return;
       }
       uiStore.clearOutput();
+      useUiStore.setState({ selectedHistoryRunId: null });
       uiStore.setActiveBottomPanelTab(debug ? 'debug' : 'output');
       store.setStatus('running');
       const execution = executeWorkflow(

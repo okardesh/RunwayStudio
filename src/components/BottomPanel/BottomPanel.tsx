@@ -7,6 +7,7 @@ import { RunHistoryPanel } from './RunHistoryPanel';
 import { Icon, type IconName } from '../Icon';
 import { UiTargetLibrary } from '../UiTargets/UiTargetLibrary';
 import { DebugPanel } from '../DebugPanel/DebugPanel';
+import { TestExplorer } from '../TestExplorer/TestExplorer';
 
 type SubTab = 'variables' | 'arguments' | 'namespaces' | 'connections';
 
@@ -131,6 +132,7 @@ export function BottomPanel() {
     { id: 'history' as BottomPanelTab, label: 'Run History' },
     { id: 'targets' as BottomPanelTab, label: 'UI Targets' },
     { id: 'debug' as BottomPanelTab, label: 'Locals & Watch' },
+    { id: 'tests' as BottomPanelTab, label: 'Test Explorer' },
     { id: 'markers' as BottomPanelTab, label: 'Markers' },
     { id: 'errors' as BottomPanelTab, label: 'Errors' },
   ];
@@ -143,7 +145,7 @@ export function BottomPanel() {
   ];
 
   return (
-    <div className={`bottom-panel${mainTab === 'history' ? ' bottom-panel--history' : mainTab === 'targets' ? ' bottom-panel--targets' : mainTab === 'debug' ? ' bottom-panel--debug' : ''}`}>
+    <div className={`bottom-panel${mainTab === 'history' ? ' bottom-panel--history' : mainTab === 'targets' ? ' bottom-panel--targets' : mainTab === 'debug' ? ' bottom-panel--debug' : mainTab === 'tests' ? ' bottom-panel--tests' : ''}`}>
       <div className="bp__tab-row">
         <div className="bp__main-tabs">
           {mainTabs.map(({ id, label }) => (
@@ -152,7 +154,7 @@ export function BottomPanel() {
               className={`bp__main-tab${mainTab === id ? ' bp__main-tab--active' : ''}`}
               onClick={() => setActiveBottomPanelTab(id)}
             >
-              <Icon name={({ dataManager: 'data', output: 'terminal', history: 'history', targets: 'cursor', debug: 'code', markers: 'layers', errors: 'alert' } as Record<BottomPanelTab, IconName>)[id]} size={14} />{label}
+              <Icon name={({ dataManager: 'data', output: 'terminal', history: 'history', targets: 'cursor', debug: 'code', tests: 'shield', markers: 'layers', errors: 'alert' } as Record<BottomPanelTab, IconName>)[id]} size={14} />{label}
             </button>
           ))}
         </div>
@@ -175,6 +177,7 @@ export function BottomPanel() {
       <div className="bp__content">
         {mainTab === 'history' && <RunHistoryPanel />}
         <div hidden={mainTab !== 'debug'} style={{ height: '100%', minHeight: 0 }}><DebugPanel /></div>
+        <div hidden={mainTab !== 'tests'} style={{ height: '100%', minHeight: 0 }}><TestExplorer /></div>
         <div hidden={mainTab !== 'targets'} style={{ height: '100%', minHeight: 0 }}><UiTargetLibrary /></div>
         {mainTab === 'dataManager' && subTab === 'variables' && (
           <div className="bp-vars">

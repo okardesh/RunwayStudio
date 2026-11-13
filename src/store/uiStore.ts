@@ -7,7 +7,7 @@ export interface OutputMessage {
   timestamp: string;
 }
 
-export type BottomPanelTab = 'dataManager' | 'output' | 'markers' | 'errors' | 'history' | 'targets' | 'debug';
+export type BottomPanelTab = 'dataManager' | 'output' | 'markers' | 'errors' | 'history' | 'targets' | 'debug' | 'tests';
 
 export interface UiTargetDraft { nodeId: string; property: string; selector: string; application: string; name: string; targetType: 'browser' | 'desktop' }
 
@@ -20,6 +20,7 @@ interface UiState {
   outputMessages: OutputMessage[];
   statusMessage: string | null;
   historyErrorNodeId: string | null;
+  selectedHistoryRunId: string | null;
   selectedUiTargetId: string | null;
   uiTargetDraft: UiTargetDraft | null;
 
@@ -42,6 +43,7 @@ export const useUiStore = create<UiState>((set) => ({
   outputMessages: [],
   statusMessage: null,
   historyErrorNodeId: null,
+  selectedHistoryRunId: null,
   selectedUiTargetId: null,
   uiTargetDraft: null,
 

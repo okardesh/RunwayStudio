@@ -9,11 +9,12 @@ const duration = (start: number, end?: number) => end === undefined ? 'In progre
 export function RunHistoryPanel() {
   const { runs, clear, captureScreenshots, setCaptureScreenshots, storageWarning } = useExecutionHistoryStore();
   const workflow = useWorkflowStore();
+  const requestedRunId = useUiStore((s) => s.selectedHistoryRunId);
   const [runId, setRunId] = useState<string | null>(null);
   const [stepId, setStepId] = useState<string | null>(null);
   const [errorsOnly, setErrorsOnly] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
-  useEffect(() => { setRunId(runs[0]?.id ?? null); setStepId(null); }, [runs[0]?.id]);
+  useEffect(() => { setRunId(requestedRunId && runs.some((r) => r.id === requestedRunId) ? requestedRunId : runs[0]?.id ?? null); setStepId(null); }, [runs[0]?.id, requestedRunId]);
   const run = runs.find((r) => r.id === runId) ?? runs[0];
   const steps = run?.steps.filter((s) => !errorsOnly || s.status === 'error') ?? [];
   const step = steps.find((s) => s.id === stepId) ?? steps.find((s) => s.status === 'error') ?? steps[0];
@@ -38,7 +39,7 @@ export function RunHistoryPanel() {
       <strong>Execution history</strong>
       <label><input type="checkbox" checked={captureScreenshots} onChange={(e) => setCaptureScreenshots(e.target.checked)} /> Capture desktop on error</label>
       <span>Stored on this device · Last 20 runs</span>
-      <button onClick={() => { clear(); setRunId(null); setStepId(null); setPreview(null); useUiStore.setState({ historyErrorNodeId: null }); }}>Clear history</button>
+      <button onClick={() => { clear(); setRunId(null); setStepId(null); setPreview(null); useUiStore.setState({ historyErrorNodeId: null, selectedHistoryRunId: null }); }}>Clear history</button>
     </div>
     {storageWarning && <div className="rh-notice" role="status">{storageWarning}</div>}
     {!run ? <div className="bp-empty">No runs yet. Run or debug a workflow to inspect its activity timeline.</div> :
@@ -46,6 +47,7 @@ export function RunHistoryPanel() {
         <nav className="rh-runs" aria-label="Workflow runs">
           {runs.map((r) => <button key={r.id} className={`rh-run${r.id === run.id ? ' rh-selected' : ''}`} onClick={() => { setRunId(r.id); setStepId(null); }}>
             <strong>{r.projectName}</strong><time>{new Date(r.startedAt).toLocaleString()}</time>
+            {r.test && <span className={`rh-test-label te-status--${r.test.status}`}>Test {r.test.status} · {r.test.testName} / {r.test.rowName}</span>}
             <span><span className={`rh-status rh-status--${r.status}`}>{r.status}</span> · {duration(r.startedAt, r.endedAt)}{r.debug ? ' · Debug' : ''}</span>
           </button>)}
         </nav>
@@ -58,6 +60,13 @@ export function RunHistoryPanel() {
           </button>)}
         </section>
         <section className="rh-detail" aria-label="Activity details">
+          {run.test && <section className="rh-test-results" aria-label="Test assertions">
+            <strong className={`te-status--${run.test.status}`}>Test {run.test.status}: {run.test.testName} / {run.test.rowName}</strong>
+            <small>Activity execution: {run.status}</small>
+            {!!run.test.assertions.length && <small>Value previews may be shortened. Checks compare full runtime values.</small>}
+            {!run.test.assertions.length && <p>{run.test.status === 'running' ? 'Assertions run after the workflow completes.' : 'Assertions were not evaluated because the workflow did not complete.'}</p>}
+            {run.test.assertions.map((a) => <details key={a.expression} open={!a.passed}><summary className={a.passed ? 'te-status--passed' : 'te-status--failed'}>{a.passed ? 'Passed' : 'Failed'} · {a.expression}</summary><div>Expected<pre>{a.expected}</pre>Actual<pre>{a.actual}</pre>{a.error && <p>{a.error}</p>}</div></details>)}
+          </section>}
           {step ? <>
             <div className="rh-detail-heading"><strong>{step.label}</strong><button disabled={!canReveal(step)} onClick={() => reveal(step)}>Show on canvas</button></div>
             {!canReveal(step) && <div className="rh-notice">Open the original workflow to locate this activity. The saved details remain available.</div>}

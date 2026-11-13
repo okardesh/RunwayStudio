@@ -7,11 +7,14 @@ import { useUiTargetStore } from '../store/uiTargetStore';
 import { createLiveDebugger } from './liveDebugger';
 import { useDebugStore } from '../store/debugStore';
 import { evaluateBreakpointCondition } from './breakpointCondition';
+import type { TestExecution } from '../shared/workflowTests';
 
 export type LogLevel = 'Info' | 'Warning' | 'Error' | 'Debug';
 export type LogFn = (text: string, level: LogLevel) => void;
 
 let _stopRequested = false;
+let _executing = false;
+export const isWorkflowExecuting = () => _executing;
 
 // ── Debug stepping ──────────────────────────────────────────────────────────
 // Single module-level pause slot: at most one workflow runs at a time, so a
@@ -157,6 +160,8 @@ function resolveCollectionValue(value: unknown, values: Record<string, unknown>)
 }
 
 export interface DebugOptions {
+  initialValues?: Record<string, unknown>;
+  test?: TestExecution;
   projectName?: string;
   filePath?: string | null;
   debug?: boolean;
@@ -166,7 +171,13 @@ export interface DebugOptions {
   onResume?: () => void;
 }
 
-export async function executeWorkflow(
+export async function executeWorkflow(...args: Parameters<typeof executeWorkflowRecorded>): Promise<'completed' | 'stopped' | 'error'> {
+  if (_executing) throw Error('Another workflow is already running. Stop it before starting a new run.');
+  _executing = true;
+  try { return await executeWorkflowRecorded(...args); } finally { _executing = false; }
+}
+
+async function executeWorkflowRecorded(
   nodes: Node<WorkflowNodeData>[],
   edges: Edge[],
   variables: WorkflowVariable[],
@@ -205,10 +216,12 @@ async function executeWorkflowCore(
 ): Promise<'completed' | 'stopped' | 'error'> {
   _stopRequested = false;
   const values: Record<string, unknown> = Object.fromEntries(variables.map((variable) => [variable.name, variable.defaultValue]));
+  if (debugOptions?.initialValues) for (const name of Object.keys(values)) if (Object.prototype.hasOwnProperty.call(debugOptions.initialValues, name)) values[name] = debugOptions.initialValues[name];
+  trace.runtime(values);
   let currentNodeId: string | null = null;
   live?.capture(values, null);
   const onNodeStart = (id: string) => { currentNodeId = id; live?.capture(values, id); trace.start(id, values); notifyStart(id); };
-  const onNodeEnd = (id: string) => { live?.capture(values, id); trace.end(id, _stopRequested); notifyEnd(id); };
+  const onNodeEnd = (id: string) => { trace.runtime(values); live?.capture(values, id); trace.end(id, _stopRequested); notifyEnd(id); };
   const onLog: LogFn = (text, level) => { if (level === 'Error') trace.error(text); notifyLog(text, level); };
   const runWithValues = async (activityId: string, properties: Record<string, unknown>) => {
     const inputs = resolveProperties(properties, values);
@@ -535,6 +548,7 @@ async function executeWorkflowCore(
     onNodeEnd(node.id);
   }
 
+  if (_stopRequested) { onLog('Stopped by user', 'Warning'); return 'stopped'; }
   onLog('✔  Workflow completed', 'Info');
   return 'completed';
 }
