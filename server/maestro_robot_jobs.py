@@ -170,6 +170,14 @@ def _valid_view(job, job_id):
             and isinstance(l.get('message'), str) for l in job['logs']))
 
 
+def _callback_base(handler, host):
+    base = str(host.get('RUNWAY_PUBLIC_URL') or ('http://' + handler.headers.get('Host', ''))).rstrip('/')
+    request_host = handler.headers.get('Host', '')
+    if urlsplit(base).hostname in ('localhost', '127.0.0.1', '::1') and urlsplit('http://' + request_host).hostname not in (None, 'localhost', '127.0.0.1', '::1'):
+        return 'http://' + request_host
+    return base
+
+
 def handle(handler, method, parsed, host):
     if parsed.path != BASE and not parsed.path.startswith(BASE + '/'):
         return False
@@ -242,7 +250,9 @@ def handle(handler, method, parsed, host):
                 conn.execute('INSERT INTO studio_robot_jobs VALUES (?,?,?,?,?,?,?,?,?)', (job_id, tenant, data['requestId'], fingerprint, bot_id, item['id'], item['version'], manifest['id'], json.dumps(view)))
                 conn.execute('''INSERT INTO rpa_jobs (id,organization_id,workflow_id,workflow_name,workflow_version,bot_id,status,inputs,created_at)
                                 VALUES (?,?,?,?,?,?,?,?,?)''', (job_id, tenant, item['id'], item['name'], item['version'], bot_id, 'queued', json.dumps(_masked(data['inputs'])), now))
-            callback_base = str(host.get('RUNWAY_PUBLIC_URL') or ('http://' + handler.headers.get('Host', ''))).rstrip('/')
+            # Packaged Maestro advertises loopback to its own UI. Remote Robots need the
+            # reachable origin used by Studio, rather than the Mac's loopback address.
+            callback_base = _callback_base(handler, host)
             try:
                 _call(host, tenant, bot_id, 'POST', payload={'jobId': job_id, 'workflowId': item['id'], 'definition': item['definition'], 'inputs': data['inputs'], 'callbackUrl': callback_base + BASE + '/' + job_id + '/complete'})
             except Exception:

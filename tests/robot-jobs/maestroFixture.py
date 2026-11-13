@@ -9,6 +9,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
+from types import SimpleNamespace
 
 source, config_file = map(Path, sys.argv[1:3])
 config = json.loads(config_file.read_text(encoding='utf-8'))
@@ -37,6 +38,8 @@ module = Path(__file__).resolve().parents[2] / 'server' / 'maestro_robot_jobs.py
 spec = importlib.util.spec_from_file_location('fixture_jobs', module)
 jobs = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(jobs)
+assert jobs._callback_base(SimpleNamespace(headers={'Host': '10.211.55.2:5050'}), {'RUNWAY_PUBLIC_URL': 'http://127.0.0.1:5050'}) == 'http://10.211.55.2:5050'
+assert jobs._callback_base(SimpleNamespace(headers={'Host': '127.0.0.1:5050'}), {'RUNWAY_PUBLIC_URL': 'https://runway.example'}) == 'https://runway.example'
 flags = {'offline': False, 'drop': False}
 
 
