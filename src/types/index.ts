@@ -47,6 +47,8 @@ export interface WorkflowNodeData {
   isContainer?: boolean; // mirrors ActivityDefinition.isContainer for quick access
   branches?: WorkflowBranch[]; // ordered branch containers for an If activity
   breakpoint?: boolean;  // pauses debug execution before this activity runs
+  breakpointCondition?: string;
+  breakpointHitCount?: number; // exact enabled visit to pause on; unset means every visit
   collapsed?: boolean;   // folds the activity or block in the workflow designer
   loopVariable?: { name: string; type: string }; // local For Each item, scoped to its loop only
 }

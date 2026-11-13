@@ -9,6 +9,7 @@ import { ExpressionInput } from './ExpressionInput';
 import './PropertiesPanel.css';
 import { Icon } from '../Icon';
 import { TargetSelector } from '../UiTargets/TargetSelector';
+import { BreakpointSettings } from './BreakpointSettings';
 
 // ── Properties Content (UiPath property grid style) ──────────────────────────
 
@@ -282,6 +283,8 @@ function PropertiesContent() {
           </div>
         );
       })}
+
+      <BreakpointSettings nodeId={selectedNode.id} data={selectedNode.data} />
 
       {recorderFor !== null && createPortal(
         ancestorTargetType === 'desktop' ? (

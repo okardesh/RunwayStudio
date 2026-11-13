@@ -6,6 +6,7 @@ import { resolveTargetBindings } from '../shared/uiTargets';
 import { useUiTargetStore } from '../store/uiTargetStore';
 import { createLiveDebugger } from './liveDebugger';
 import { useDebugStore } from '../store/debugStore';
+import { evaluateBreakpointCondition } from './breakpointCondition';
 
 export type LogLevel = 'Info' | 'Warning' | 'Error' | 'Debug';
 export type LogFn = (text: string, level: LogLevel) => void;
@@ -160,6 +161,7 @@ export interface DebugOptions {
   filePath?: string | null;
   debug?: boolean;
   hasBreakpoint?: (nodeId: string) => boolean;
+  getBreakpoint?: (nodeId: string) => { enabled: boolean; condition?: string; hitCount?: number } | undefined;
   onPause?: (nodeId: string) => void;
   onResume?: () => void;
 }
@@ -269,6 +271,7 @@ async function executeWorkflowCore(
 
   const debug = debugOptions?.debug ?? false;
   const hasBreakpoint = debugOptions?.hasBreakpoint ?? (() => false);
+  const breakpointHits = new Map<string, number>();
   // A fresh debug run only pauses at breakpoints until the user starts stepping.
   let pendingStep: 'run' | StepMode = 'run';
   let stepOverBaseDepth = 0;
@@ -277,8 +280,25 @@ async function executeWorkflowCore(
   // it carries a breakpoint or the previous step command asked to stop here.
   async function maybeBreak(nodeId: string, depth: number) {
     if (!debug) return;
+    const node = nodes.find((n) => n.id === nodeId);
+    const config = debugOptions?.getBreakpoint ? debugOptions.getBreakpoint(nodeId) : {
+      enabled: debugOptions?.hasBreakpoint ? hasBreakpoint(nodeId) : !!node?.data.breakpoint,
+      condition: node?.data.breakpointCondition, hitCount: node?.data.breakpointHitCount,
+    };
+    let breakpointPause = false;
+    if (config?.enabled) {
+      const hit = (breakpointHits.get(nodeId) ?? 0) + 1;
+      breakpointHits.set(nodeId, hit);
+      const invalidHit = config.hitCount !== undefined && (!Number.isSafeInteger(config.hitCount) || config.hitCount < 1);
+      if (invalidHit) { onLog('Breakpoint hit count must be a positive whole number; paused for inspection.', 'Warning'); breakpointPause = true; }
+      else if (config.hitCount === undefined || hit === config.hitCount) {
+        const result = config.condition?.trim() ? evaluateBreakpointCondition(config.condition, values) : { value: true };
+        breakpointPause = !!result.value || !!result.error;
+        if (result.error) onLog(`Breakpoint condition could not be evaluated: ${result.error} Paused for inspection.`, 'Warning');
+      }
+    }
     const shouldPause =
-      hasBreakpoint(nodeId) ||
+      breakpointPause ||
       pendingStep === 'step-into' ||
       (pendingStep === 'step-over' && depth <= stepOverBaseDepth);
     if (!shouldPause) return;

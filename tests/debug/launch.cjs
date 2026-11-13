@@ -14,10 +14,36 @@ global.window = { electronAPI: { executeActivity: (...args) => activity(...args)
 const node = (id, activityId = 'get-text', properties = {}, extra = {}) => ({ id, position: { x: 0, y: 0 }, data: { activityId, label: id, properties, ...extra } });
 const variable = (name, defaultValue = '', type = 'String') => ({ id: name, name, defaultValue, type, scope: 'Main' });
 async function main() {
-  await esbuild.build({ stdin: { resolveDir: root, contents: `export * from './src/engine/executor';export * from './src/store/debugStore';export * from './src/engine/watchExpressions';` }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(out, 'engine.cjs') });
+  await esbuild.build({ stdin: { resolveDir: root, contents: `export * from './src/engine/executor';export * from './src/store/debugStore';export * from './src/engine/watchExpressions';export * from './src/engine/breakpointCondition';` }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(out, 'engine.cjs') });
   const { executeWorkflow, resumeDebug, requestStop, useDebugStore: debug, evaluateWatchExpression: evaluate, debugValue } = require(path.join(out, 'engine.cjs'));
   const run = (nodes, variables = [], options = {}) => executeWorkflow(nodes, [], variables, () => {}, () => {}, () => {}, { debug: true, projectName: 'Debug fixture', ...options });
   let passed = 0; const test = async (name, fn) => { await fn(); passed++; console.log('PASS ' + name); };
+  const { evaluateBreakpointCondition: condition } = require(path.join(out, 'engine.cjs'));
+  await test('Breakpoint comparisons use runtime types without executing code', async () => {
+    const values = { count: 4, text: 'a > b', ready: false, items: [42], empty: null };
+    for (const [source, expected] of [['count > 3', true], ['count <= 3', false], ['count >= 4', true], ['count < 9', true], ['count == 4', true], ['count != 4', false], ['count === "4"', false], ['ready', false], ['text == "a > b"', true], ['items[0] == 42', true], ['empty == null', true]]) assert.equal(condition(source, values).value, expected, source);
+    let touched = 0; Object.defineProperty(values, 'danger', { get() { touched++; return true; } });
+    for (const source of ['danger', 'count = 3', 'count > 1 > 0', 'items.push(1)', 'count', 'count > "3"', 'items == items', 'process.exit()']) assert.ok(condition(source, values).error, source);
+    assert.equal(touched, 0); assert.equal(values.count, 4); assert.deepEqual(values.items, [42]);
+  });
+  await test('Conditional loop breakpoints combine exact hit counts and reset on a new run', async () => {
+    activity = async () => ({ success: true, log: 'Done' }); const seen = [];
+    const nodes = [node('loop', 'for-each', { collection: '["one","two","three"]' }, { isContainer: true, childIds: ['body'], loopVariable: { name: 'item', type: 'String' } }), node('body', 'log-message', {}, { parentId: 'loop', breakpoint: true, breakpointCondition: 'item == "two"', breakpointHitCount: 2 })];
+    for (let i = 0; i < 2; i++) assert.equal(await run(nodes, [], { onPause: id => { seen.push([id, debug.getState().locals.find(v => v.name === 'item').detail]); resumeDebug('continue'); } }), 'completed');
+    assert.deepEqual(seen, [['body', 'two'], ['body', 'two']]);
+    nodes[1].data.breakpointCondition = 'false';
+    await run(nodes, [], { onPause: () => assert.fail('False condition must skip the exact hit') });
+    nodes[1].data.breakpoint = false; nodes[1].data.breakpointCondition = 'invalid()';
+    await run(nodes, [], { onPause: () => assert.fail('Disabled breakpoints must not pause') });
+  });
+  await test('Invalid conditions pause with a warning and stepping ignores false conditions', async () => {
+    const logs = []; let pauses = 0;
+    assert.equal(await executeWorkflow([node('bad', 'log-message', {}, { breakpoint: true, breakpointCondition: 'missing > 3' })], [], [], () => {}, () => {}, (text, level) => logs.push([text, level]), { debug: true, onPause: () => { pauses++; resumeDebug('continue'); } }), 'completed');
+    assert.equal(pauses, 1); assert.ok(logs.some(([text, level]) => level === 'Warning' && /condition could not be evaluated/.test(text)));
+    const seen = []; await run([node('first'), node('second')], [], { getBreakpoint: id => ({ enabled: true, condition: id === 'first' ? 'true' : 'false' }), onPause: id => { seen.push(id); resumeDebug(id === 'first' ? 'step-into' : 'continue'); } });
+    assert.deepEqual(seen, ['first', 'second']);
+    await run([node('normal')], [], { debug: false, getBreakpoint: () => assert.fail('Normal Run must not inspect breakpoints') });
+  });
   await test('Watch grammar reads variables, members, arrays, JSON properties and primitive types', async () => {
     const context = { textResult: ' Esra ', items: [{ amount: 42 }], count: 0, valid: false, empty: null };
     for (const [expression, expected] of [['textResult', ' Esra '], ['{{textResult}}.Length', 6], ['textResult.Trim().ToUpper()', 'ESRA'], ['items[0].amount', 42], ['items.Count', 1], ['items[0]["amount"]', 42], ['count', 0], ['valid', false], ['empty', null]]) assert.equal(evaluate(expression, context).value, expected, expression);
@@ -111,6 +137,17 @@ async function uiTest() {
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 950 } }); page.setDefaultTimeout(8000); const errors = []; page.on('pageerror', e => errors.push(e.message)); await page.goto(pathToFileURL(path.join(out, 'index.html')).href); await page.locator('.app-header').waitFor();
     await page.evaluate(() => { const n = (id, activityId, label, properties, extra = {}) => ({ id, position: { x: 0, y: 0 }, data: { activityId, label, properties, ...extra } }); fixture.workflow.getState().loadWorkflow({ projectName: 'Invoice processing', nodes: [n('read', 'get-text', 'Read invoice number', { selector: '#invoice', output: 'textResult' }), n('assign', 'assign', 'Approve invoice', { to: 'textResult', value: 'Approved' }, { breakpoint: true }), n('log', 'log-message', 'Log invoice status', { message: 'textResult', level: 'Info' })], edges: [], variables: [{ id: 'text', name: 'textResult', type: 'String', defaultValue: '', scope: 'Main' }] }, 'C:/fixture/debug.rpa.json'); });
+    await page.evaluate(() => fixture.workflow.getState().setSelectedNode('assign'));
+    await page.getByRole('textbox', { name: 'Breakpoint condition', exact: true }).fill('textResult.Length > 10');
+    await page.getByRole('spinbutton', { name: 'Breakpoint hit count', exact: true }).fill('1');
+    await page.getByRole('checkbox', { name: 'Enable breakpoint', exact: true }).uncheck();
+    await page.getByRole('checkbox', { name: 'Enable breakpoint', exact: true }).check();
+    assert.equal(await page.evaluate(() => fixture.workflow.getState().isDirty), true);
+    assert.equal(await page.evaluate(() => fixture.workflow.getState().nodes.find(n => n.id === 'assign').data.breakpointHitCount), 1);
+    const saved = await page.evaluate(() => { const state = fixture.workflow.getState(); return JSON.stringify({ projectName: state.projectName, nodes: state.nodes, edges: state.edges, variables: state.variables }); });
+    await page.evaluate(content => fixture.workflow.getState().loadWorkflow(JSON.parse(content), 'C:/fixture/debug.rpa.json'), saved);
+    await page.evaluate(() => fixture.workflow.getState().setSelectedNode('assign'));
+    assert.equal(await page.getByRole('textbox', { name: 'Breakpoint condition', exact: true }).inputValue(), 'textResult.Length > 10');
     await page.locator('.app-header').getByRole('button', { name: 'Debug', exact: true }).click();
     await page.getByRole('textbox', { name: 'Watch expression', exact: true }).fill('textResult'); await page.locator('.dbg-add-watch').getByRole('button', { name: 'Add', exact: true }).click();
     await page.getByTitle('Debug workflow', { exact: true }).click(); await page.waitForFunction(() => fixture.debug.getState().phase === 'paused');
@@ -120,11 +157,12 @@ async function uiTest() {
     await page.getByTitle(/Step Into \(F11\)/).click(); await page.waitForFunction(() => fixture.debug.getState().phase === 'paused' && fixture.debug.getState().activityName === 'Log invoice status');
     assert.equal(await page.evaluate(() => fixture.debug.getState().locals[0].detail), 'Approved'); assert.equal(await page.evaluate(() => fixture.debug.getState().locals[0].changedBy), 'Approve invoice');
     await page.getByRole('textbox', { name: 'Watch expression', exact: true }).fill('missing.Length'); await page.locator('.dbg-add-watch').getByRole('button', { name: 'Add', exact: true }).click(); await page.getByText('Not in scope: missing', { exact: true }).waitFor();
+    await page.locator('.breakpoint-settings').scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(out, 'debug-dark.png'), animations: 'disabled' }); await page.getByRole('button', { name: 'Light', exact: true }).click(); await page.screenshot({ path: path.join(out, 'debug-light.png'), animations: 'disabled' });
     await page.setViewportSize({ width: 1100, height: 700 }); assert.equal(await page.evaluate(() => document.body.scrollWidth > innerWidth), false); await page.screenshot({ path: path.join(out, 'debug-compact.png'), animations: 'disabled' });
     await page.getByRole('button', { name: 'Remove watch missing.Length', exact: true }).click(); await page.getByTitle('Continue (F5)', { exact: true }).click(); await page.waitForFunction(() => fixture.debug.getState().phase === 'completed');
     await page.reload(); await page.locator('.app-header').waitFor(); await page.getByRole('button', { name: 'Locals & Watch', exact: true }).click(); assert.equal(await page.evaluate(() => fixture.debug.getState().watches.includes('textResult.Length')), true); assert.equal(await page.evaluate(() => fixture.debug.getState().locals.length), 0);
-    assert.deepEqual(errors, []); console.log('PASS UI Debug, breakpoint, Watch add/remove, Step Into, Continue, persistence, Dark/Light and compact layout');
+    assert.deepEqual(errors, []); console.log('PASS UI conditional breakpoint settings and round-trip, Debug, Watch add/remove, Step Into, Continue, persistence, Dark/Light and compact layout');
   } finally { await browser.close(); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

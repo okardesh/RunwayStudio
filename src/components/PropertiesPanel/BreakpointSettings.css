@@ -1,0 +1,6 @@
+.breakpoint-settings .pgrid-section__icon { color: var(--studio-red); }
+.breakpoint-settings .pgrid-row { display: block; }
+.breakpoint-settings__hint, .breakpoint-settings__error { margin: 8px 12px; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.breakpoint-settings__hint { color: var(--studio-muted); }
+.breakpoint-settings__error { color: var(--studio-red); }
+.breakpoint-settings input[type="number"] { width: 100%; box-sizing: border-box; }

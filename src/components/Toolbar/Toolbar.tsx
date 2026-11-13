@@ -53,6 +53,7 @@ export function Toolbar({ activeTab, onPublish }: ToolbarProps) {
           filePath: useWorkflowStore.getState().filePath,
           debug,
           hasBreakpoint: (id) => !!useWorkflowStore.getState().nodes.find((n) => n.id === id)?.data.breakpoint,
+          getBreakpoint: (id) => { const data = useWorkflowStore.getState().nodes.find((n) => n.id === id)?.data; return data ? { enabled: !!data.breakpoint, condition: data.breakpointCondition, hitCount: data.breakpointHitCount } : undefined; },
           onPause: (id) => {
             useUiStore.getState().setActiveBottomPanelTab('debug');
             useWorkflowStore.getState().setStatus('paused');

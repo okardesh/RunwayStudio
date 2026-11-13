@@ -63,6 +63,7 @@ interface WorkflowState {
   configureForEach: (nodeId: string, collection: string) => void;
   renameForEachVariable: (nodeId: string, name: string) => void;
   toggleBreakpoint: (nodeId: string) => void;
+  configureBreakpoint: (nodeId: string, changes: Partial<Pick<WorkflowNodeData, 'breakpoint' | 'breakpointCondition' | 'breakpointHitCount'>>) => void;
   toggleNodeCollapsed: (nodeId: string) => void;
   setAllNodesCollapsed: (collapsed: boolean) => void;
   setSelectedNode: (nodeId: string | null) => void;
@@ -477,6 +478,10 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
         isDirty: true,
       };
     }),
+
+  configureBreakpoint: (nodeId, changes) => set((state) => ({
+    nodes: state.nodes.map((node) => node.id === nodeId ? { ...node, data: { ...node.data, ...changes } } : node), isDirty: true,
+  })),
 
   toggleBreakpoint: (nodeId) =>
     set((state) => ({
