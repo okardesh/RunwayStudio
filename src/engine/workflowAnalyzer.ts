@@ -2,11 +2,12 @@ import type { Edge, Node } from 'reactflow';
 import type { WorkflowArgument, WorkflowNodeData, WorkflowVariable } from '../types';
 import { getActivity } from '../activities/registry';
 import type { UiTarget } from '../shared/uiTargets';
+import { validateArguments, validArgumentName } from '../shared/invokedWorkflows';
 
 export interface AnalysisSource { nodes: Node<WorkflowNodeData>[]; edges: Edge[]; variables: WorkflowVariable[]; arguments: WorkflowArgument[]; targets: UiTarget[]; projectName: string; filePath: string | null }
 export type FindingSeverity = 'error' | 'warning' | 'info';
 export interface AnalysisFinding { id: string; code: string; severity: FindingSeverity; nodeId?: string; activity: string; property: string; message: string; recommendation: string }
-export interface AnalysisReport { signature: string; projectName: string; analyzedAt: number; findings: AnalysisFinding[]; truncated: boolean }
+export interface AnalysisReport { signature: string; projectName: string; analyzedAt: number; findings: AnalysisFinding[]; truncated: boolean; dependencyState?: 'checking' | 'complete' | 'unavailable' }
 const identifier = /^[A-Za-z_]\w*$/;
 const blank = (value: unknown) => value === undefined || value === null || typeof value === 'string' && !value.trim();
 const variableName = (value: unknown) => String(value ?? '').trim().replace(/^\{\{\s*|\s*\}\}$/g, '');
@@ -38,10 +39,9 @@ export function analyzeWorkflow(source: AnalysisSource): AnalysisReport {
     const binding = node.data.targetBindings?.[field];
     return binding ? targets.get(binding)?.selector : node.data.properties?.[field] !== undefined ? node.data.properties[field] : getActivity(node.data.activityId)?.properties.find((p) => p.name === field)?.defaultValue;
   };
-  const writes = (node: Node<WorkflowNodeData>) => (getActivity(node.data.activityId)?.properties ?? []).filter((p) => p.type === 'variable' && outputField(p.name)).map((p) => String(value(node, p.name) ?? '').trim()).filter((name) => identifier.test(name));
+  const writes = (node: Node<WorkflowNodeData>) => [...(getActivity(node.data.activityId)?.properties ?? []).filter((p) => p.type === 'variable' && outputField(p.name)).map((p) => String(value(node, p.name) ?? '').trim()), ...(node.data.activityId === 'invoke-workflow' && node.data.properties.outArguments && typeof node.data.properties.outArguments === 'object' ? Object.values(node.data.properties.outArguments).filter((v): v is string => typeof v === 'string') : [])].filter((name) => identifier.test(name));
   const possible = new Set(nodes.flatMap(writes));
-  const globals = new Set(source.variables.map((v) => v.name));
-  const args = new Set(source.arguments.map((a) => a.name));
+  const globals = new Set([...source.variables.map((v) => v.name), ...source.arguments.map((a) => a.name)]);
   const loopNames = new Set(nodes.map((n) => n.data.loopVariable?.name).filter(Boolean));
   const used = new Set<string>();
   const ids = new Set<string>();
@@ -52,7 +52,13 @@ export function analyzeWorkflow(source: AnalysisSource): AnalysisReport {
     const activity = getActivity(node.data.activityId);
     if (!activity) add('WA102', 'error', node, 'Activity', 'This activity is not in the Studio activity registry.', 'Replace it with a supported activity from the Activities panel.');
     if (activity?.isContainer && !node.data.isContainer) add('WA119', 'error', node, 'Structure', 'This control activity is not marked as a container and will not execute its block normally.', 'Restore the activity container flag or recreate the block from Activities.');
-    if (['invoke-workflow', 'while', 'end'].includes(node.data.activityId) || node.data.activityId.startsWith('outlook-desktop-')) add('WA103', 'warning', node, 'Activity', 'This activity currently falls back to simulated execution in Studio.', 'Do not rely on this activity for real automation until its runtime implementation is available.');
+    if (['while', 'end'].includes(node.data.activityId) || node.data.activityId.startsWith('outlook-desktop-')) add('WA103', 'warning', node, 'Activity', 'This activity currently falls back to simulated execution in Studio.', 'Do not rely on this activity for real automation until its runtime implementation is available.');
+    if (node.data.activityId === 'invoke-workflow') {
+      add('WA300', 'warning', node, 'Workflow File', 'Invoked file and argument declarations need a dependency check.', 'Use Analyze in the desktop app to read and validate this workflow dependency.');
+      add('WA305', 'warning', node, 'Publishing', 'Called workflow files are local dependencies and are not bundled for Runway publishing.', 'Use Studio Run, Debug and Test Explorer for these calls. Remote dependency packaging requires separate support.');
+      const outputs = node.data.properties.outArguments;
+      if (outputs && typeof outputs === 'object') for (const target of Object.values(outputs)) if (target && (typeof target !== 'string' || !validArgumentName(target))) add('WA302', 'error', node, 'Out arguments', 'An output mapping is not a valid caller variable name.', 'Use a bare variable name without template braces.');
+    }
     if (node.data.parentId && !byId.has(node.data.parentId)) add('WA110', 'error', node, 'Parent', 'The parent activity does not exist.', 'Reconnect the activity to an existing container or move it to the root.');
     const seen = new Set([node.id]); let parent = node.data.parentId;
     while (parent && byId.has(parent)) {
@@ -116,20 +122,23 @@ export function analyzeWorkflow(source: AnalysisSource): AnalysisReport {
   const argumentNames = new Set<string>();
   for (const argument of source.arguments) {
     if (!identifier.test(argument.name) || argumentNames.has(argument.name)) add('WA202', 'error', undefined, 'Arguments', `Argument "${argument.name}" has an invalid or duplicate name.`, 'Rename conflicting or invalid arguments in Data Manager.');
-    if (globals.has(argument.name)) add('WA203', 'warning', undefined, 'Arguments', `A variable and an argument share the name "${argument.name}".`, 'Use distinct names to avoid ambiguous references.');
+    if (source.variables.some((v) => v.name === argument.name)) add('WA203', 'error', undefined, 'Arguments', `A variable and an argument share the name "${argument.name}".`, 'Use distinct names to avoid ambiguous references.');
     argumentNames.add(argument.name);
   }
+  try { validateArguments(source.arguments, source.variables); } catch (error) { add('WA204', 'error', undefined, 'Arguments', error instanceof Error ? error.message : 'Invalid argument declaration.', 'Use supported JSON-compatible argument types and distinct names.'); }
   const reference = (name: string, node: Node<WorkflowNodeData>, field: string, available: Set<string>, local: Set<string>, uncertain = false) => {
     used.add(name);
     if (available.has(name) || local.has(name)) return;
-    if (args.has(name)) add('WA204', 'warning', node, field, `Argument "${name}" is not initialized by the local Studio executor.`, 'Use a declared local variable for Studio runs or supply arguments through the published runtime.');
-    else if (possible.has(name)) add('WA205', 'warning', node, field, `Output "${name}" may be read before it is produced or on a path that does not assign it.`, 'Initialize it in Data Manager or assign it on every path before this activity.');
+    if (possible.has(name)) add('WA205', 'warning', node, field, `Output "${name}" may be read before it is produced or on a path that does not assign it.`, 'Initialize it in Data Manager or assign it on every path before this activity.');
     else if (loopNames.has(name)) add('WA206', 'error', node, field, `Loop variable "${name}" is referenced outside its loop body.`, 'Move the activity into the loop or copy the item to a declared variable.');
     else add('WA207', uncertain ? 'warning' : 'error', node, field, `No declared variable or known output produces "${name}".`, uncertain ? 'Check the variable spelling. Quote the message if it is intended as literal text.' : 'Declare the variable or correct its name; otherwise the template will remain unresolved.');
   };
   const visited = new Set<string>();
   const check = (node: Node<WorkflowNodeData>, available: Set<string>, local: Set<string>) => {
     const props = getActivity(node.data.activityId)?.properties ?? [];
+    if (node.data.activityId === 'invoke-workflow' && node.data.properties.inArguments && typeof node.data.properties.inArguments === 'object') {
+      for (const item of Object.values(node.data.properties.inArguments)) if (typeof item === 'string') for (const name of new Set([...item.matchAll(/\{\{\s*([A-Za-z_]\w*)[^{}]*\}\}/g)].map((match) => match[1]))) reference(name, node, 'In arguments', available, local);
+    }
     for (const prop of props) {
       const current = value(node, prop.name);
       if (prop.type === 'variable') {

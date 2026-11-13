@@ -122,7 +122,7 @@ export const systemActivities: ActivityDefinition[] = [
         type: 'string',
         defaultValue: '',
         required: true,
-        description: 'Path to the workflow .xaml file',
+        description: 'Studio .rpa.json file; relative paths use the calling workflow folder',
       },
     ],
   },

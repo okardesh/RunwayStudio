@@ -3,6 +3,8 @@ import type { LicenseRequest, LicenseTransportResult } from '../src/shared/runwa
 
 contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
+  readInvokedWorkflow: (requested: string, callerPath: string | null) => ipcRenderer.invoke('workflow:read-invoked', requested, callerPath) as Promise<{ path: string; content: string }>,
+  chooseInvokedWorkflow: () => ipcRenderer.invoke('workflow:choose-invoked') as Promise<{ cancelled: true } | { path: string; content: string }>,
   setStudioTheme: (theme: 'dark' | 'light') => ipcRenderer.invoke('studio:set-theme', theme) as Promise<boolean>,
   captureFailureScreenshot: () => ipcRenderer.invoke('automation:capture-failure') as Promise<{ image?: string; error?: string }>,
   executeActivity: (id: string, props: Record<string, unknown>) =>

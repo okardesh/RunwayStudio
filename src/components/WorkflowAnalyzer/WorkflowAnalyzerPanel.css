@@ -33,5 +33,6 @@
 .wa-empty p { max-width: 580px; margin: 0; }
 .wa-empty strong { color: var(--studio-text); font-weight: 500; }
 .wa-stale { padding: 7px 14px; font-size: 11px; color: var(--studio-warning); background: var(--studio-warning-tint); border-bottom: 1px solid var(--studio-border); }
+.wa-dependencies { padding: 7px 14px; font-size: 11px; color: var(--studio-muted); border-bottom: 1px solid var(--studio-border); }
 .seq-canvas--analysis-focus .seq-card--selected, .seq-canvas--analysis-focus .container-card--selected,
 .seq-canvas--analysis-focus .for-each-card--selected, .seq-canvas--analysis-focus .if-card--selected, .seq-canvas--analysis-focus .try-catch-card--selected { outline: 2px solid var(--studio-blue); outline-offset: 2px; }

@@ -16,6 +16,9 @@ export function RunHistoryPanel() {
   const [preview, setPreview] = useState<string | null>(null);
   useEffect(() => { setRunId(requestedRunId && runs.some((r) => r.id === requestedRunId) ? requestedRunId : runs[0]?.id ?? null); setStepId(null); }, [runs[0]?.id, requestedRunId]);
   const run = runs.find((r) => r.id === runId) ?? runs[0];
+  const parentRun = runs.find((r) => r.id === run?.parentRunId);
+  const children = runs.filter((r) => r.parentRunId === run?.id);
+  const selectRun = (id: string) => { setRunId(id); setStepId(null); useUiStore.setState({ selectedHistoryRunId: id }); };
   const steps = run?.steps.filter((s) => !errorsOnly || s.status === 'error') ?? [];
   const step = steps.find((s) => s.id === stepId) ?? steps.find((s) => s.status === 'error') ?? steps[0];
   const sameWorkflow = run && (run.filePath ? run.filePath === workflow.filePath : run.projectName === workflow.projectName);
@@ -47,6 +50,7 @@ export function RunHistoryPanel() {
         <nav className="rh-runs" aria-label="Workflow runs">
           {runs.map((r) => <button key={r.id} className={`rh-run${r.id === run.id ? ' rh-selected' : ''}`} onClick={() => { setRunId(r.id); setStepId(null); }}>
             <strong>{r.projectName}</strong><time>{new Date(r.startedAt).toLocaleString()}</time>
+            {r.parentRunId && <span>↳ Called workflow · depth {r.callDepth}</span>}
             {r.test && <span className={`rh-test-label te-status--${r.test.status}`}>Test {r.test.status} · {r.test.testName} / {r.test.rowName}</span>}
             <span><span className={`rh-status rh-status--${r.status}`}>{r.status}</span> · {duration(r.startedAt, r.endedAt)}{r.debug ? ' · Debug' : ''}</span>
           </button>)}
@@ -60,6 +64,8 @@ export function RunHistoryPanel() {
           </button>)}
         </section>
         <section className="rh-detail" aria-label="Activity details">
+          {(run.parentRunId || children.length > 0) && <div className="rh-call-links" aria-label="Workflow call links">{run.parentRunId && <button disabled={!parentRun} onClick={() => parentRun && selectRun(parentRun.id)}>Caller: {parentRun?.projectName ?? 'Not retained in history'}</button>}{children.map((child) => <button key={child.id} onClick={() => selectRun(child.id)}>Called: {child.projectName} · {child.status}</button>)}</div>}
+          {run.arguments && <details><summary>Workflow arguments</summary><strong>In</strong><pre>{JSON.stringify(run.arguments.inputs, null, 2)}</pre><strong>Out</strong><pre>{JSON.stringify(run.arguments.outputs ?? {}, null, 2)}</pre></details>}
           {run.test && <section className="rh-test-results" aria-label="Test assertions">
             <strong className={`te-status--${run.test.status}`}>Test {run.test.status}: {run.test.testName} / {run.test.rowName}</strong>
             <small>Activity execution: {run.status}</small>

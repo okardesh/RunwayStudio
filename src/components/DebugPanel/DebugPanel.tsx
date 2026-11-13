@@ -10,7 +10,7 @@ function Value({ value }: { value: DebugValue }) {
 }
 
 export function DebugPanel() {
-  const { phase, projectName, activityName, locals, watches, results, updatedAt, storageWarning, addWatch, removeWatch } = useDebugStore();
+  const { phase, projectName, activityName, locals, watches, results, updatedAt, storageWarning, addWatch, removeWatch, frames } = useDebugStore();
   const [filter, setFilter] = useState('');
   const [expression, setExpression] = useState('');
   const [error, setError] = useState('');
@@ -23,6 +23,7 @@ export function DebugPanel() {
       <span className="dbg-snapshot">{updatedAt ? `${live ? 'Live' : 'Last debug snapshot'} · ${new Date(updatedAt).toLocaleTimeString()}` : 'Start Debug to inspect runtime values'}</span>
     </div>
     {storageWarning && <div className="dbg-warning" role="status">{storageWarning}</div>}
+    {frames.length > 1 && <div className="dbg-call-stack">Call stack: {frames.map((f) => f.projectName).join(' → ')}</div>}
     <div className="dbg-columns">
       <section className="dbg-locals" aria-label="Local variables">
         <header className="dbg-section-heading"><strong>Locals <span>{locals.length}</span></strong><input aria-label="Filter local variables" placeholder="Filter variables..." value={filter} onChange={(e) => setFilter(e.target.value)} /></header>

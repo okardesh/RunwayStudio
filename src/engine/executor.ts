@@ -1,13 +1,16 @@
 ﻿import type { Node, Edge } from 'reactflow';
-import type { WorkflowNodeData, WorkflowVariable } from '../types';
+import type { WorkflowArgument, WorkflowNodeData, WorkflowVariable } from '../types';
 import { createExecutionTrace } from './executionTrace';
 import { resolveLogMessage } from '../shared/logMessageExpression';
 import { resolveTargetBindings } from '../shared/uiTargets';
 import { useUiTargetStore } from '../store/uiTargetStore';
 import { createLiveDebugger } from './liveDebugger';
-import { useDebugStore } from '../store/debugStore';
+import { useDebugStore, type DebugFrame } from '../store/debugStore';
 import { evaluateBreakpointCondition } from './breakpointCondition';
 import type { TestExecution } from '../shared/workflowTests';
+import { argumentValue, cloneArgument, initializeArguments, loadWorkflowGraph, resolveArgumentInput, type WorkflowGraph, type WorkflowLoader } from '../shared/invokedWorkflows';
+import { loadInvokedWorkflow } from './workflowLoader';
+import type { UiTarget } from '../shared/uiTargets';
 
 export type LogLevel = 'Info' | 'Warning' | 'Error' | 'Debug';
 export type LogFn = (text: string, level: LogLevel) => void;
@@ -160,6 +163,8 @@ function resolveCollectionValue(value: unknown, values: Record<string, unknown>)
 }
 
 export interface DebugOptions {
+  arguments?: WorkflowArgument[];
+  loadWorkflow?: WorkflowLoader;
   initialValues?: Record<string, unknown>;
   test?: TestExecution;
   projectName?: string;
@@ -167,14 +172,19 @@ export interface DebugOptions {
   debug?: boolean;
   hasBreakpoint?: (nodeId: string) => boolean;
   getBreakpoint?: (nodeId: string) => { enabled: boolean; condition?: string; hitCount?: number } | undefined;
-  onPause?: (nodeId: string) => void;
+  onPause?: (nodeId: string, location?: { projectName: string; filePath: string | null; activityName: string }) => void;
   onResume?: () => void;
 }
 
-export async function executeWorkflow(...args: Parameters<typeof executeWorkflowRecorded>): Promise<'completed' | 'stopped' | 'error'> {
+interface ExecutionSession { graph?: WorkflowGraph; targets: UiTarget[]; frames: DebugFrame[]; rootRunId?: string; step: 'run' | StepMode; stepOverDepth: number }
+interface ExecutionFrame { depth: number; parentRunId?: string; invocationNodeId?: string; inheritedSecrets?: string[] }
+interface ExecutionResult { status: 'completed' | 'stopped' | 'error'; values: Record<string, unknown>; secrets: string[] }
+export async function executeWorkflow(nodes: Node<WorkflowNodeData>[], edges: Edge[], variables: WorkflowVariable[], onNodeStart: (id: string) => void, onNodeEnd: (id: string) => void, onLog: LogFn, options?: DebugOptions): Promise<'completed' | 'stopped' | 'error'> {
   if (_executing) throw Error('Another workflow is already running. Stop it before starting a new run.');
-  _executing = true;
-  try { return await executeWorkflowRecorded(...args); } finally { _executing = false; }
+  _executing = true; _stopRequested = false;
+  const session: ExecutionSession = { targets: JSON.parse(JSON.stringify(useUiTargetStore.getState().targets)), frames: [], step: 'run', stepOverDepth: 0 };
+  try { return (await executeWorkflowRecorded(nodes, edges, variables, onNodeStart, onNodeEnd, onLog, options, session, { depth: 0 })).status; }
+  finally { _executing = false; _resumeResolver = null; useDebugStore.setState({ frames: [] }); }
 }
 
 async function executeWorkflowRecorded(
@@ -184,23 +194,62 @@ async function executeWorkflowRecorded(
   onNodeStart: (id: string) => void,
   onNodeEnd: (id: string) => void,
   onLog: LogFn,
-  debugOptions?: DebugOptions
-): Promise<'completed' | 'stopped' | 'error'> {
-  const live = debugOptions?.debug ? createLiveDebugger(debugOptions.projectName || 'Workflow', nodes, variables) : undefined;
-  if (!live) useDebugStore.getState().clearSession();
-  const trace = createExecutionTrace(nodes, variables, debugOptions);
+  debugOptions: DebugOptions | undefined,
+  session: ExecutionSession,
+  frame: ExecutionFrame
+): Promise<ExecutionResult> {
+  const trace = createExecutionTrace(nodes, variables, { ...debugOptions, ...frame, callDepth: session.frames.length, rootRunId: session.rootRunId });
+  session.rootRunId ??= trace.runId;
+  const live = debugOptions?.debug ? createLiveDebugger(debugOptions.projectName || 'Workflow', nodes, [...variables, ...(debugOptions.arguments ?? []).map((a) => ({ ...a, scope: `Argument (${a.direction})` }))], frame.depth === 0, trace.secrets) : undefined;
+  if (!live && frame.depth === 0) useDebugStore.getState().clearSession();
+  const currentFrame: DebugFrame = { id: trace.runId, projectName: debugOptions?.projectName || 'Workflow', filePath: debugOptions?.filePath ?? null, nodes, nodeId: null, depth: frame.depth };
+  session.frames.push(currentFrame);
+  const publishFrame = (nodeId: string | null) => { currentFrame.nodeId = nodeId; if (live) useDebugStore.setState({ frames: session.frames.map((f) => ({ ...f })) }); };
+  let finalValues: Record<string, unknown> = {};
   try {
-    const resolvedNodes = resolveTargetBindings(nodes, useUiTargetStore.getState().targets);
-    const result = await executeWorkflowCore(resolvedNodes, edges, variables, onNodeStart, onNodeEnd, onLog, trace, debugOptions, live);
-    live?.finish(result);
+    if (frame.depth === 0 && nodes.some((n) => n.data.activityId === 'invoke-workflow')) session.graph = await loadWorkflowGraph({ projectName: currentFrame.projectName, nodes, edges, variables, arguments: debugOptions?.arguments ?? [] }, currentFrame.filePath, debugOptions?.loadWorkflow ?? loadInvokedWorkflow);
+    const resolvedNodes = resolveTargetBindings(nodes, session.targets);
+    const invoke = async (nodeId: string, properties: Record<string, unknown>, values: Record<string, unknown>, depth: number) => {
+      const loaded = session.graph?.resolve(currentFrame.filePath, nodeId);
+      if (!loaded) throw Error('Invoked workflow dependency is unavailable.');
+      const provided: Record<string, unknown> = Object.create(null);
+      for (const arg of loaded.definition.arguments.filter((a) => a.direction === 'In')) if (Object.prototype.hasOwnProperty.call(properties.inArguments ?? {}, arg.name)) {
+        try {
+          const input = resolveArgumentInput((properties.inArguments as Record<string, unknown>)[arg.name], values);
+          provided[arg.name] = argumentValue(input.value, arg.type, input.authoredText);
+        } catch { throw Error(`Input argument "${arg.name}" could not be resolved as ${arg.type}. Check its caller mapping.`); }
+      }
+      const child = loaded.definition;
+      for (const target of child.uiTargets ?? []) if (!session.targets.some((t) => t.id === target.id)) session.targets.push(JSON.parse(JSON.stringify(target)));
+      const result = await executeWorkflowRecorded(JSON.parse(JSON.stringify(child.nodes)), child.edges, JSON.parse(JSON.stringify(child.variables)), () => {}, () => {}, onLog,
+        { ...debugOptions, projectName: child.projectName, filePath: loaded.path, arguments: child.arguments, initialValues: provided, test: undefined, hasBreakpoint: undefined, getBreakpoint: undefined }, session,
+        { depth: depth + 1, parentRunId: trace.runId, invocationNodeId: nodeId, inheritedSecrets: trace.secrets });
+      for (const secret of result.secrets) if (!trace.secrets.includes(secret)) trace.secrets.push(secret);
+      publishFrame(nodeId);
+      if (result.status !== 'completed') return false;
+      const outputs: Record<string, unknown> = Object.create(null);
+      for (const arg of child.arguments.filter((a) => a.direction === 'Out')) {
+        const destination = (properties.outArguments as Record<string, string> | undefined)?.[arg.name];
+        if (destination) outputs[destination] = cloneArgument(result.values[arg.name]);
+      }
+      for (const [name, value] of Object.entries(outputs)) Object.defineProperty(values, name, { value, writable: true, configurable: true, enumerable: true });
+      return true;
+    };
+    let result = await executeWorkflowCore(resolvedNodes, edges, variables, onNodeStart, onNodeEnd, onLog, trace, debugOptions, live, session, frame.depth, publishFrame, invoke, (values) => { finalValues = values; });
+    if (_stopRequested) result = 'stopped';
+    if (result === 'completed') for (const arg of debugOptions?.arguments ?? []) if (arg.direction === 'Out') {
+      try { finalValues[arg.name] = argumentValue(finalValues[arg.name], arg.type); } catch { throw Error(`Output argument "${arg.name}" does not match its declared ${arg.type} type.`); }
+    }
+    if (frame.depth === 0) live?.finish(result);
     await trace.finish(result);
-    return result;
+    return { status: result, values: finalValues, secrets: trace.secrets };
   } catch (error) {
-    live?.finish('error');
-    onLog(error instanceof Error ? error.message : String(error), 'Error');
-    await trace.finish('error', error);
-    return 'error';
-  }
+    const status = _stopRequested ? 'stopped' : 'error';
+    if (frame.depth === 0) live?.finish(status);
+    if (!_stopRequested) onLog(error instanceof Error ? error.message : String(error), 'Error');
+    await trace.finish(status, _stopRequested ? undefined : error);
+    return { status, values: {}, secrets: trace.secrets };
+  } finally { session.frames.pop(); }
 }
 
 async function executeWorkflowCore(
@@ -211,28 +260,35 @@ async function executeWorkflowCore(
   notifyEnd:   (id: string) => void,
   notifyLog: LogFn,
   trace: ReturnType<typeof createExecutionTrace>,
-  debugOptions?: DebugOptions,
-  live?: ReturnType<typeof createLiveDebugger>
+  debugOptions: DebugOptions | undefined,
+  live: ReturnType<typeof createLiveDebugger> | undefined,
+  session: ExecutionSession,
+  baseDepth: number,
+  publishFrame: (nodeId: string | null) => void,
+  invoke: (nodeId: string, properties: Record<string, unknown>, values: Record<string, unknown>, depth: number) => Promise<boolean>,
+  captureValues: (values: Record<string, unknown>) => void
 ): Promise<'completed' | 'stopped' | 'error'> {
-  _stopRequested = false;
   const values: Record<string, unknown> = Object.fromEntries(variables.map((variable) => [variable.name, variable.defaultValue]));
   if (debugOptions?.initialValues) for (const name of Object.keys(values)) if (Object.prototype.hasOwnProperty.call(debugOptions.initialValues, name)) values[name] = debugOptions.initialValues[name];
+  Object.assign(values, initializeArguments(debugOptions?.arguments ?? [], variables, debugOptions?.initialValues));
+  captureValues(values);
   trace.runtime(values);
   let currentNodeId: string | null = null;
   live?.capture(values, null);
-  const onNodeStart = (id: string) => { currentNodeId = id; live?.capture(values, id); trace.start(id, values); notifyStart(id); };
+  let currentDepth = baseDepth;
+  const onNodeStart = (id: string) => { currentNodeId = id; publishFrame(id); live?.capture(values, id); trace.start(id, values); notifyStart(id); };
   const onNodeEnd = (id: string) => { trace.runtime(values); live?.capture(values, id); trace.end(id, _stopRequested); notifyEnd(id); };
-  const onLog: LogFn = (text, level) => { if (level === 'Error') trace.error(text); notifyLog(text, level); };
+  const onLog: LogFn = (text, level) => { if (level === 'Error' && !_stopRequested) trace.error(text); notifyLog(_stopRequested && level === 'Error' ? 'Stopped by user' : text, _stopRequested && level === 'Error' ? 'Warning' : level); };
   const runWithValues = async (activityId: string, properties: Record<string, unknown>) => {
     const inputs = resolveProperties(properties, values);
     if (activityId === 'log-message') inputs.message = resolveLogMessage(properties.message, values);
     trace.inputs(inputs);
     let success = false;
-    try { success = await runWithValuesCore(activityId, properties); }
+    try { success = activityId === 'invoke-workflow' ? await invoke(currentNodeId!, properties, values, currentDepth) : await runWithValuesCore(activityId, properties); }
     catch (error) { onLog(error instanceof Error ? error.message : String(error), 'Error'); }
     live?.capture(values, currentNodeId, 'running', true);
     trace.outputs(values);
-    if (!success) { trace.error('Activity failed. See error details in Output.'); await trace.captureFailure(); }
+    if (!success && !_stopRequested) { trace.error('Activity failed. See error details in Output.'); await trace.captureFailure(); }
     return success;
   };
   const runWithValuesCore = async (activityId: string, properties: Record<string, unknown>) => {
@@ -267,6 +323,7 @@ async function executeWorkflowCore(
       return true;
     }
     const resolvedProperties = resolveProperties(properties, values);
+    if (activityId === 'assign' && typeof properties.value === 'string' && /^\s*\{\{[^{}]+\}\}\s*$/.test(properties.value)) resolvedProperties.value = resolveArgumentInput(properties.value, values).value;
     if (activityId === 'log-message') resolvedProperties.message = resolveLogMessage(properties.message, values);
     if (activityId === 'write-csv') {
       resolvedProperties.data = resolveCollectionValue(properties.data, values);
@@ -286,18 +343,19 @@ async function executeWorkflowCore(
   const hasBreakpoint = debugOptions?.hasBreakpoint ?? (() => false);
   const breakpointHits = new Map<string, number>();
   // A fresh debug run only pauses at breakpoints until the user starts stepping.
-  let pendingStep: 'run' | StepMode = 'run';
-  let stepOverBaseDepth = 0;
 
   // Pauses (awaiting a resume command) before a node runs, when debugging and either
   // it carries a breakpoint or the previous step command asked to stop here.
   async function maybeBreak(nodeId: string, depth: number) {
+    depth += baseDepth; currentDepth = depth;
     if (!debug) return;
     const node = nodes.find((n) => n.id === nodeId);
     const config = debugOptions?.getBreakpoint ? debugOptions.getBreakpoint(nodeId) : {
       enabled: debugOptions?.hasBreakpoint ? hasBreakpoint(nodeId) : !!node?.data.breakpoint,
       condition: node?.data.breakpointCondition, hitCount: node?.data.breakpointHitCount,
     };
+    const override = useDebugStore.getState().breakpointOverrides[`${debugOptions?.filePath ?? '<root>'}:${nodeId}`];
+    if (config && override !== undefined) config.enabled = override;
     let breakpointPause = false;
     if (config?.enabled) {
       const hit = (breakpointHits.get(nodeId) ?? 0) + 1;
@@ -312,20 +370,20 @@ async function executeWorkflowCore(
     }
     const shouldPause =
       breakpointPause ||
-      pendingStep === 'step-into' ||
-      (pendingStep === 'step-over' && depth <= stepOverBaseDepth);
+      session.step === 'step-into' ||
+      (session.step === 'step-over' && depth <= session.stepOverDepth);
     if (!shouldPause) return;
 
     const paused = new Promise<StepMode>((resolve) => { _resumeResolver = resolve; });
     live?.capture(values, nodeId, 'paused');
-    debugOptions?.onPause?.(nodeId);
+    debugOptions?.onPause?.(nodeId, { projectName: debugOptions.projectName || 'Workflow', filePath: debugOptions.filePath ?? null, activityName: node?.data.label ?? nodeId });
     const mode = await paused;
     live?.capture(values, nodeId, 'running');
     debugOptions?.onResume?.();
 
-    if (mode === 'continue') pendingStep = 'run';
-    else if (mode === 'step-into') pendingStep = 'step-into';
-    else { pendingStep = 'step-over'; stepOverBaseDepth = depth; }
+    if (mode === 'continue') session.step = 'run';
+    else if (mode === 'step-into') session.step = 'step-into';
+    else { session.step = 'step-over'; session.stepOverDepth = depth; }
   }
 
   onLog('▶  Workflow started', 'Info');

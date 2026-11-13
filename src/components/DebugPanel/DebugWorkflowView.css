@@ -1,0 +1,15 @@
+.debug-workflow-view { color: var(--studio-text); display: flex; flex-direction: column; min-width: 0; }
+.dwv-header { display: flex; align-items: center; gap: 12px; padding: 15px 20px; border-bottom: 1px solid var(--studio-border); font-size: 12px; }
+.dwv-header > div { flex: 1; min-width: 0; }
+.dwv-header small { display: block; color: var(--studio-muted); font-size: 10px; margin-top: 5px; overflow-wrap: anywhere; }
+.dwv-header > span, .dwv-stack, .debug-workflow-view footer { color: var(--studio-muted); font-size: 11px; }
+.dwv-stack { padding: 10px 20px; border-bottom: 1px solid var(--studio-border); overflow-wrap: anywhere; }
+.dwv-activities { flex: 1; overflow: auto; padding: 22px; }
+.dwv-activity { display: flex; align-items: center; gap: 12px; background: var(--studio-surface); border: 1px solid var(--studio-border); border-radius: 7px; padding: 12px; margin-bottom: 10px; }
+.dwv-activity--current { border-color: var(--studio-warning); background: var(--studio-warning-tint); }
+.dwv-activity strong { font-size: 12px; font-weight: 550; }
+.dwv-activity small { display: block; color: var(--studio-muted); font-size: 10px; margin-top: 5px; }
+.dwv-breakpoint { color: var(--studio-subtle); border: 0; background: transparent; cursor: pointer; }
+.dwv-breakpoint--set { color: var(--studio-red); }
+.debug-workflow-view footer { border-top: 1px solid var(--studio-border); padding: 10px 20px; line-height: 1.6; }
+.dbg-call-stack { padding: 6px 14px; color: var(--studio-muted); border-bottom: 1px solid var(--studio-border); font-size: 10px; overflow-wrap: anywhere; }

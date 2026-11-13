@@ -24,6 +24,11 @@ export interface ExecutionRun {
   endedAt?: number;
   status: RunStatus;
   debug: boolean;
+  parentRunId?: string;
+  rootRunId?: string;
+  invocationNodeId?: string;
+  callDepth?: number;
+  arguments?: { inputs: unknown; outputs?: unknown };
   steps: ExecutionStep[];
   error?: string;
   truncated?: boolean;

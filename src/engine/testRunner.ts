@@ -18,7 +18,7 @@ export async function runWorkflowTests(selected: WorkflowTest[]) {
   if (!selected.length) throw Error('Save a test for this workflow first.');
   const tests: WorkflowTest[] = JSON.parse(JSON.stringify(selected));
   const key = testWorkflowKey(workflow.filePath, workflow.projectName);
-  const variables = new Set(workflow.variables.map((v) => v.name));
+  const variables = new Set([...workflow.variables.map((v) => v.name), ...workflow.arguments.filter((a) => a.direction === 'In').map((a) => a.name)]);
   for (const test of tests) {
     validateTest(test);
     if (test.workflowKey !== key) throw Error('These tests belong to a different workflow.');
@@ -26,7 +26,7 @@ export async function runWorkflowTests(selected: WorkflowTest[]) {
   }
   const total = tests.reduce((count, test) => count + test.rows.length, 0);
   if (total > 100) throw Error('Run up to 100 data rows in one batch.');
-  const source = JSON.parse(JSON.stringify({ nodes: workflow.nodes, edges: workflow.edges, variables: workflow.variables }));
+  const source = JSON.parse(JSON.stringify({ nodes: workflow.nodes, edges: workflow.edges, variables: workflow.variables, arguments: workflow.arguments }));
   const batchId = crypto.randomUUID(); let completed = 0, passed = 0, failed = 0, errors = 0, stopped = false;
   useTestExplorerStore.setState({ active: true, stopRequested: false, completed: 0, total, progress: 'Starting tests…' });
   useUiStore.setState({ selectedHistoryRunId: null });
@@ -40,6 +40,7 @@ export async function runWorkflowTests(selected: WorkflowTest[]) {
         (id) => useWorkflowStore.getState().setExecutingNodeId(id), () => {},
         (text, level) => useUiStore.getState().addOutputMessage({ text, level }), {
           projectName: workflow.projectName, filePath: workflow.filePath, debug: false,
+          arguments: fresh.arguments,
           initialValues: JSON.parse(JSON.stringify(row.inputs)),
           test: { testId: test.id, testName: test.name, rowName: row.name, batchId, expected: row.expected },
         });

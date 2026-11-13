@@ -11,12 +11,12 @@ Dependencies must be installed and Chrome must be available at its standard Wind
 ## Usage
 
 1. Open the workflow and choose the **Test Explorer** bottom tab.
-2. Create a test, name its first data row, and enter JSON input overrides for declared variables, for example `{"customer":"Ada"}`. Unspecified variables keep their canvas defaults.
+2. Create a test, name its first data row, and enter JSON input overrides for declared variables or In arguments, for example `{"customer":"Ada"}`. Unspecified values keep their canvas defaults.
 3. Enter a JSON object mapping Watch expressions to expected values, for example `{"textResult":"Hello Ada","items.Count":2}`.
 4. Add data rows with different inputs and expected values. Save the test, then choose **Run test** or **Run all** for the current workflow.
 5. Open a recent result to inspect its assertions and activity timeline in **Run History**. Expected and actual values appear separately. Execution errors, assertion mismatches, and stopped tests have distinct statuses.
 
-Expected values use strict types and deep JSON equality (object key order does not matter). Watch property/index/string-method expressions are supported; arbitrary code is not. An unavailable expression fails its assertion. Checks use the full runtime value, while displayed values are bounded previews with known credentials masked. Tests currently assert final runtime variables; workflow argument overrides, log assertions, expected exceptions, remote runners, and application state reset are not implemented.
+Expected values use strict types and deep JSON equality (object key order does not matter). Watch property/index/string-method expressions are supported; arbitrary code is not. An unavailable expression fails its assertion. Checks use the full runtime value, while displayed values are bounded previews with known credentials masked. Tests assert final runtime variables and arguments, including mapped outputs from invoked workflows. Log assertions, expected exceptions, remote runners, and application state reset are not implemented.
 
 Test definitions are stored separately on this device, associated with the workflow's saved path or its project name for an unsaved workflow. Save As creates a separate association. Test execution snapshots the current canvas, including unsaved edits, without saving or modifying workflow files. Each row receives fresh variable data. Native activities still operate on real applications; external application state is shared between rows. One workflow can execute at a time, and **Stop tests** stops after the current activity and skips remaining rows.
 

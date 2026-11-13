@@ -9,6 +9,7 @@ import { pickDesktopElement } from './automation/picker.js'
 import { registerRunwayLicenseIpc } from './runwayLicenseIpc'
 import { captureFailureScreenshot } from './executionScreenshot'
 import { registerStudioThemeIpc } from './studioThemeIpc'
+import { readInvokedWorkflow } from './workflowFiles'
 
 const _require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -208,6 +209,13 @@ app.whenReady().then(() => {
     const filePath = result.filePaths[0];
     const content = fs.readFileSync(filePath, { encoding: 'utf8' });
     return { path: filePath, content };
+  });
+
+  ipcMain.handle('workflow:read-invoked', (_e, requested: string, callerPath: string | null) => readInvokedWorkflow(requested, callerPath));
+  ipcMain.handle('workflow:choose-invoked', async () => {
+    const result = await dialog.showOpenDialog(win!, { filters: [{ name: 'Studio Workflow (.rpa.json)', extensions: ['json'] }], properties: ['openFile'] });
+    if (result.canceled || !result.filePaths.length) return { cancelled: true };
+    return readInvokedWorkflow(result.filePaths[0], null);
   });
 
   // Populate the type browser from the installed .NET runtime. The renderer

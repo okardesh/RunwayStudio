@@ -73,7 +73,7 @@ async function main() {
     assert.ok(has(findings(source([node('A'), node('A')])), 'WA101'));
   });
   test('Branches and direct loop controls are checked against the current executor', () => {
-    const result = findings(source([node('If', 'if', {}, { isContainer: true, branches: [{ id: 'a', kind: 'if', condition: '', childIds: [] }, { id: 'b', kind: 'else', condition: '', childIds: [] }, { id: 'c', kind: 'else', condition: '', childIds: [] }] }), node('Try', 'try-catch', {}, { isContainer: true, branches: [] }), node('Break', 'break'), node('Unsupported', 'invoke-workflow', { workflowFile: 'other.rpa.json' })]));
+    const result = findings(source([node('If', 'if', {}, { isContainer: true, branches: [{ id: 'a', kind: 'if', condition: '', childIds: [] }, { id: 'b', kind: 'else', condition: '', childIds: [] }, { id: 'c', kind: 'else', condition: '', childIds: [] }] }), node('Try', 'try-catch', {}, { isContainer: true, branches: [] }), node('Break', 'break'), node('Unsupported', 'while', { condition: 'true' })]));
     for (const code of ['WA120', 'WA121', 'WA122', 'WA126', 'WA103']) assert.ok(has(result, code), code);
   });
   test('Signatures ignore canvas view changes but track properties, targets and workflow identity', () => {

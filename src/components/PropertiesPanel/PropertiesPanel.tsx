@@ -10,6 +10,8 @@ import './PropertiesPanel.css';
 import { Icon } from '../Icon';
 import { TargetSelector } from '../UiTargets/TargetSelector';
 import { BreakpointSettings } from './BreakpointSettings';
+import { InvokeWorkflowSettings } from './InvokeWorkflowSettings';
+import { useDebugStore } from '../../store/debugStore';
 
 // ── Properties Content (UiPath property grid style) ──────────────────────────
 
@@ -289,6 +291,7 @@ function PropertiesContent() {
       })}
 
       <BreakpointSettings nodeId={selectedNode.id} data={selectedNode.data} />
+      {selectedNode.data.activityId === 'invoke-workflow' && <InvokeWorkflowSettings key={selectedNode.id} nodeId={selectedNode.id} data={selectedNode.data} />}
 
       {recorderFor !== null && createPortal(
         ancestorTargetType === 'desktop' ? (
@@ -312,6 +315,12 @@ function PropertiesContent() {
 // ── Main Component ─────────────────────────────────────────────────────────────
 
 export function PropertiesPanel() {
+  const { frames, phase } = useDebugStore();
+  const frame = frames[frames.length - 1];
+  if (frames.length > 1 && (phase === 'running' || phase === 'paused') && frame) {
+    const current = frame.nodes.find((n) => n.id === frame.nodeId);
+    return <div className="properties-panel"><div className="properties-panel__header"><Icon name="branch" size={17} /><span className="properties-panel__title">Called workflow</span></div><div className="properties-panel__content"><div className="prop-grid__type"><strong>{current?.data.label ?? frame.projectName}</strong><span>{current ? getActivity(current.data.activityId)?.description : 'Read-only debug source'}</span></div><div className="invoke-settings__body"><strong>Read-only debug source</strong><p>{frame.filePath}</p><p>In and Out values are shown in Locals &amp; Watch for the active frame. Return to the caller to edit its Invoke mapping.</p></div></div></div>;
+  }
   return (
     <div className="properties-panel">
       <div className="properties-panel__header">

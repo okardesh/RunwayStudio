@@ -57,14 +57,15 @@ export function Toolbar({ activeTab, onPublish }: ToolbarProps) {
         (text, level) => useUiStore.getState().addOutputMessage({ text, level }),
         {
           projectName: store.projectName,
+          arguments: store.arguments,
           filePath: useWorkflowStore.getState().filePath,
           debug,
           hasBreakpoint: (id) => !!useWorkflowStore.getState().nodes.find((n) => n.id === id)?.data.breakpoint,
           getBreakpoint: (id) => { const data = useWorkflowStore.getState().nodes.find((n) => n.id === id)?.data; return data ? { enabled: !!data.breakpoint, condition: data.breakpointCondition, hitCount: data.breakpointHitCount } : undefined; },
-          onPause: (id) => {
+          onPause: (id, location) => {
             useUiStore.getState().setActiveBottomPanelTab('debug');
             useWorkflowStore.getState().setStatus('paused');
-            const label = useWorkflowStore.getState().nodes.find((n) => n.id === id)?.data.label ?? id;
+            const label = location?.activityName ?? useWorkflowStore.getState().nodes.find((n) => n.id === id)?.data.label ?? id;
             useUiStore.getState().addOutputMessage({ text: `⏸  Paused at "${label}"`, level: 'Debug' });
           },
           onResume: () => useWorkflowStore.getState().setStatus('running'),

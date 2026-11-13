@@ -695,6 +695,7 @@ export const useWorkflowStore = create<WorkflowState>()(persist((set) => ({
     nodes: state.nodes,
     edges: state.edges,
     variables: state.variables,
+    arguments: state.arguments,
     projectName: state.projectName,
     filePath: state.filePath,
   }),

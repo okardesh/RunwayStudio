@@ -11,6 +11,13 @@ import './SequenceCanvas.css';
 import { Icon, ActivityGlyph } from '../Icon';
 import { useUiTargetStore } from '../../store/uiTargetStore';
 import { resolveTargetBindings } from '../../shared/uiTargets';
+import { useDebugStore } from '../../store/debugStore';
+import { DebugWorkflowView } from '../DebugPanel/DebugWorkflowView';
+
+export function SequenceCanvas() {
+  const showCalledSource = useDebugStore((state) => state.frames.length > 1 && (state.phase === 'running' || state.phase === 'paused'));
+  return showCalledSource ? <DebugWorkflowView /> : <SequenceCanvasContent />;
+}
 
 const displayProperties = (node: Node<WorkflowNodeData>) => resolveTargetBindings([node], useUiTargetStore.getState().targets, false)[0].data.properties;
 
@@ -426,7 +433,7 @@ function TryCatchCard({ node, isSelected, isExecuting, onSelect, onDelete }: {
 
 // ── Sequence canvas ───────────────────────────────────────────────────────────
 
-export function SequenceCanvas() {
+export function SequenceCanvasContent() {
   useUiTargetStore((state) => state.targets);
   const historyErrorNodeId = useUiStore((state) => state.historyErrorNodeId);
   const analyzerNodeId = useUiStore((state) => state.analyzerNodeId);

@@ -12,18 +12,19 @@ Chrome is required at its standard Windows installation path for the full UI fix
 
 Choose **Analyze** in the Studio ribbon, press **F8**, or open **Errors → Analyze workflow**. Errors, warnings and informational findings have rule codes, affected activities/properties and suggested actions. Filter by severity or search for an activity, rule or issue. Select an activity finding or use **Show on canvas** to select the activity and expand its ancestors. Workflow and Data Manager findings have no activity to reveal.
 
-Analysis is manual and runs against the current canvas, including unsaved edits. It does not run activities, evaluate user code, save workflows, contact applications, create Run History entries, or automatically gate Run/Debug/Test/Publish. Results stay in memory for the session. Semantic edits, workflow identity changes and UI target changes mark the previous report as out of date; reanalyze before navigating. Selection, folding and canvas position changes do not invalidate results.
+Analysis is manual and runs against the current canvas, including unsaved edits. It does not run activities, evaluate user code, save workflows, contact applications, create Run History entries, or automatically gate Run/Debug/Test/Publish. Invoke dependencies are read from disk asynchronously through the desktop read-only resolver. Results stay in memory for the session. Semantic edits, workflow identity changes and UI target changes mark the previous report as out of date; reanalyze before navigating. Selection, folding and canvas position changes do not invalidate results. Reanalyze after editing called files on disk as well.
 
 ## Rules and limits
 
 - WA001–002: activity limit and empty workflow.
 - WA101–103: unique activity IDs, unknown activities, and activities that currently fall back to simulated Studio execution.
-- WA110–118: missing/cyclic parents, unsupported nested containers, missing/duplicate children and inconsistent ownership.
+- WA110–119: missing/cyclic parents, unsupported nested containers, missing/duplicate children, inconsistent ownership and missing container flags.
 - WA120–126: IF / Try Catch branch structure, empty containers, loop variables and Break/Continue placement.
 - WA130–140: missing desktop/application targets and missing shared selector bindings. Bound selector checks use the current target library.
 - WA150–154: required properties, finite nonnegative numeric settings, integer retries, allowed options and variable-name properties.
 - WA160–161: broken connection endpoints and the local executor's list-order semantics.
-- WA200–209: variable/argument names and collisions, local argument initialization limits, read-before-output / conditional writes, loop scope, unknown explicit references, ambiguous bare Log Message references, unused declarations and unrecognized template syntax.
+- WA200–209: variable/argument names and collisions, argument declaration/type validation, read-before-output / conditional writes, loop scope, unknown explicit references, ambiguous bare Log Message references, unused declarations and unrecognized template syntax.
+- WA300–305: pending dependency checks, unreadable/invalid/recursive called workflows, required/unknown argument mappings, invalid Out destinations, and local-file publishing limitations. Called workflow findings point to the owning Invoke activity; In/Out names are recognized as available values in the called scope, and mapped Out destinations count as producers in the caller.
 
 Output-producing activities can create variables without a declaration. The analyzer tracks these outputs in execution order; it merges guaranteed IF branch outputs and treats loop outputs as conditional. Explicit unresolved `{{variable}}` references are errors. An unknown bare Log Message identifier is only a warning because it may be intended as literal text. Quoted Log Message literals are not treated as references. Rule messages include variable names but never their values.
 

@@ -1,5 +1,8 @@
 import { create } from 'zustand';
 import type { DebugValue } from '../engine/watchExpressions';
+import type { Node } from 'reactflow';
+import type { WorkflowNodeData } from '../types';
+export interface DebugFrame { id: string; projectName: string; filePath: string | null; nodes: Node<WorkflowNodeData>[]; nodeId: string | null; depth: number }
 
 export type DebugPhase = 'idle' | 'running' | 'paused' | 'completed' | 'stopped' | 'error';
 export interface DebugLocal extends DebugValue { name: string; scope: string; declaredType?: string; changedBy?: string; changed: boolean }
@@ -12,6 +15,8 @@ function readWatches(): string[] {
 let evaluateLive: ((expression: string) => WatchResult) | undefined;
 const unavailable = (expression: string): WatchResult => ({ expression, error: 'Start a Debug run to evaluate this expression.' });
 interface DebugState {
+  frames: DebugFrame[];
+  breakpointOverrides: Record<string, boolean>;
   phase: DebugPhase;
   projectName: string;
   activityName: string | null;
@@ -33,15 +38,16 @@ function saveWatches(watches: string[]) {
 }
 const initialWatches = readWatches();
 export const useDebugStore = create<DebugState>((set, get) => ({
+  frames: [], breakpointOverrides: {},
   phase: 'idle', projectName: '', activityName: null, locals: [], watches: initialWatches,
   results: initialWatches.map(unavailable), updatedAt: null, storageWarning: null,
-  begin: (projectName) => { evaluateLive = undefined; set({ phase: 'running', projectName, activityName: null, locals: [], updatedAt: null, results: get().watches.map(unavailable) }); },
+  begin: (projectName) => { evaluateLive = undefined; set({ phase: 'running', projectName, frames: [], breakpointOverrides: {}, activityName: null, locals: [], updatedAt: null, results: get().watches.map(unavailable) }); },
   capture: (locals, activityName, phase, evaluate) => {
     evaluateLive = evaluate;
     set({ locals, activityName, phase, updatedAt: Date.now(), results: get().watches.map(evaluate) });
   },
   finish: (phase) => { evaluateLive = undefined; set({ phase }); },
-  clearSession: () => { evaluateLive = undefined; set({ phase: 'idle', projectName: '', activityName: null, locals: [], updatedAt: null, results: get().watches.map(unavailable) }); },
+  clearSession: () => { evaluateLive = undefined; set({ phase: 'idle', projectName: '', frames: [], breakpointOverrides: {}, activityName: null, locals: [], updatedAt: null, results: get().watches.map(unavailable) }); },
   addWatch: (input) => {
     const expression = input.trim(), state = get();
     if (!expression || expression.length > 200) throw Error('Enter an expression of 1–200 characters.');

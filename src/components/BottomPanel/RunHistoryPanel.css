@@ -34,6 +34,9 @@ span.rh-status { background: transparent; }
 .rh-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f7f7f7; padding: 8px; border: 1px solid #edebe9; font: 11px Consolas, monospace; }
 .rh-detail details { margin: 8px 0; }
 .rh-detail summary { cursor: pointer; }
+.rh-call-links { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.rh-call-links button { padding: 6px 8px; background: var(--studio-surface); color: var(--studio-blue); border: 1px solid var(--studio-border); border-radius: 5px; font: inherit; cursor: pointer; }
+.rh-call-links button:disabled { opacity: .5; cursor: default; }
 .rh-test-results { border: 1px solid var(--studio-border); border-radius: 6px; padding: 10px; margin-bottom: 12px; }
 .rh-test-results > small { display: block; margin-top: 5px; color: var(--studio-muted); }
 .rh-run .rh-test-label.te-status--failed, .rh-run .rh-test-label.te-status--error { color: var(--studio-red); }

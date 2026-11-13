@@ -1,0 +1,10 @@
+.invoke-settings__body { padding: 12px; color: var(--studio-text); font-size: 11px; }
+.invoke-settings__actions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.invoke-settings button { border: 1px solid var(--studio-border); background: var(--studio-surface); color: var(--studio-blue); font: inherit; border-radius: 5px; padding: 6px 7px; cursor: pointer; }
+.invoke-settings button:disabled { opacity: .45; cursor: default; }
+.invoke-settings p { line-height: 1.6; color: var(--studio-muted); overflow-wrap: anywhere; }
+.invoke-settings .invoke-settings__error { color: var(--studio-red); }
+.invoke-settings__argument { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--studio-border); }
+.invoke-settings__argument span small { display: block; color: var(--studio-muted); margin-top: 4px; }
+.invoke-settings input { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid var(--studio-border); background: var(--studio-bg); color: var(--studio-text); border-radius: 5px; font: 11px var(--studio-mono); }
+.invoke-settings button:focus-visible, .invoke-settings input:focus-visible { outline: 2px solid var(--studio-blue); }
