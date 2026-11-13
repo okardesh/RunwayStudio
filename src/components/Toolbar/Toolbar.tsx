@@ -9,6 +9,7 @@ import { Icon } from '../Icon';
 import { createPortal } from 'react-dom';
 import { WorkflowRecorderModal } from '../Recorder/WorkflowRecorderModal';
 import { buildRecordedWorkflow } from '../Recorder/workflowRecording';
+import { analyzeCurrentWorkflow } from '../../engine/analyzeCurrentWorkflow';
 
 interface ToolbarProps {
   activeTab: 'design' | 'debug';
@@ -281,6 +282,7 @@ export function Toolbar({ activeTab, onPublish }: ToolbarProps) {
           </button>
           <button className={`rbn-btn${activeBottomPanelTab === 'history' ? ' active' : ''}`} onClick={() => setActiveBottomPanelTab('history')} title="Show Run History"><Icon name="history" /><span className="rbn-btn__label">History</span></button>
           <button className={`rbn-btn${activeBottomPanelTab === 'targets' ? ' active' : ''}`} onClick={() => setActiveBottomPanelTab('targets')} title="Show UI Targets"><Icon name="cursor" /><span className="rbn-btn__label">Targets</span></button>
+          <button className={`rbn-btn${activeBottomPanelTab === 'errors' ? ' active' : ''}`} onClick={analyzeCurrentWorkflow} title="Analyze workflow (F8)"><Icon name="shield" /><span className="rbn-btn__label">Analyze</span></button>
           {activeTab === 'debug' && <button className={`rbn-btn${activeBottomPanelTab === 'debug' ? ' active' : ''}`} onClick={() => setActiveBottomPanelTab('debug')} title="Show Locals and Watch"><Icon name="code" /><span className="rbn-btn__label">Locals</span></button>}
         </div>
         <span className="ribbon__group-label">View</span>

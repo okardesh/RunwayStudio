@@ -429,6 +429,7 @@ function TryCatchCard({ node, isSelected, isExecuting, onSelect, onDelete }: {
 export function SequenceCanvas() {
   useUiTargetStore((state) => state.targets);
   const historyErrorNodeId = useUiStore((state) => state.historyErrorNodeId);
+  const analyzerNodeId = useUiStore((state) => state.analyzerNodeId);
   const { nodes, addNodeAtIndex, moveNode, deleteNode, selectedNodeId, setSelectedNode, executingNodeId, status, toggleBreakpoint, toggleNodeCollapsed, setAllNodesCollapsed } =
     useWorkflowStore();
   const isPaused = status === 'paused';
@@ -498,7 +499,7 @@ export function SequenceCanvas() {
 
   return (
     <div
-      className={`seq-canvas${historyErrorNodeId && historyErrorNodeId === selectedNodeId ? ' seq-canvas--history-error' : ''}`}
+      className={`seq-canvas${historyErrorNodeId && historyErrorNodeId === selectedNodeId ? ' seq-canvas--history-error' : ''}${analyzerNodeId && analyzerNodeId === selectedNodeId ? ' seq-canvas--analysis-focus' : ''}`}
       onDragEnter={handleCanvasDragEnter}
       onDragLeave={handleCanvasDragLeave}
       onDragOver={handleCanvasDragOver}

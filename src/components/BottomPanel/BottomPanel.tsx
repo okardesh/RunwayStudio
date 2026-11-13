@@ -8,6 +8,7 @@ import { Icon, type IconName } from '../Icon';
 import { UiTargetLibrary } from '../UiTargets/UiTargetLibrary';
 import { DebugPanel } from '../DebugPanel/DebugPanel';
 import { TestExplorer } from '../TestExplorer/TestExplorer';
+import { WorkflowAnalyzerPanel } from '../WorkflowAnalyzer/WorkflowAnalyzerPanel';
 
 type SubTab = 'variables' | 'arguments' | 'namespaces' | 'connections';
 
@@ -145,7 +146,7 @@ export function BottomPanel() {
   ];
 
   return (
-    <div className={`bottom-panel${mainTab === 'history' ? ' bottom-panel--history' : mainTab === 'targets' ? ' bottom-panel--targets' : mainTab === 'debug' ? ' bottom-panel--debug' : mainTab === 'tests' ? ' bottom-panel--tests' : ''}`}>
+    <div className={`bottom-panel${mainTab === 'history' ? ' bottom-panel--history' : mainTab === 'targets' ? ' bottom-panel--targets' : mainTab === 'debug' ? ' bottom-panel--debug' : mainTab === 'tests' ? ' bottom-panel--tests' : mainTab === 'errors' ? ' bottom-panel--analyzer' : ''}`}>
       <div className="bp__tab-row">
         <div className="bp__main-tabs">
           {mainTabs.map(({ id, label }) => (
@@ -176,6 +177,7 @@ export function BottomPanel() {
 
       <div className="bp__content">
         {mainTab === 'history' && <RunHistoryPanel />}
+        <div hidden={mainTab !== 'errors'} style={{ height: '100%', minHeight: 0 }}><WorkflowAnalyzerPanel /></div>
         <div hidden={mainTab !== 'debug'} style={{ height: '100%', minHeight: 0 }}><DebugPanel /></div>
         <div hidden={mainTab !== 'tests'} style={{ height: '100%', minHeight: 0 }}><TestExplorer /></div>
         <div hidden={mainTab !== 'targets'} style={{ height: '100%', minHeight: 0 }}><UiTargetLibrary /></div>
@@ -318,9 +320,9 @@ export function BottomPanel() {
           </div>
         )}
 
-        {(mainTab === 'markers' || mainTab === 'errors') && (
+        {mainTab === 'markers' && (
           <div className="bp-empty">
-            {mainTab === 'errors' ? 'No errors found.' : 'No markers.'}
+            No markers.
           </div>
         )}
       </div>

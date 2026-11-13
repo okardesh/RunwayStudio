@@ -20,6 +20,7 @@ interface UiState {
   outputMessages: OutputMessage[];
   statusMessage: string | null;
   historyErrorNodeId: string | null;
+  analyzerNodeId: string | null;
   selectedHistoryRunId: string | null;
   selectedUiTargetId: string | null;
   uiTargetDraft: UiTargetDraft | null;
@@ -43,6 +44,7 @@ export const useUiStore = create<UiState>((set) => ({
   outputMessages: [],
   statusMessage: null,
   historyErrorNodeId: null,
+  analyzerNodeId: null,
   selectedHistoryRunId: null,
   selectedUiTargetId: null,
   uiTargetDraft: null,

@@ -32,7 +32,9 @@ function PropertiesContent() {
   // and (for desktop) which window the picker should scope itself to.
   const findAncestorTarget = (nodeId: string): { targetType: 'browser' | 'desktop'; windowTitle: string } => {
     let current = nodes.find((n) => n.id === nodeId);
-    while (current) {
+    const seen = new Set<string>();
+    while (current && !seen.has(current.id)) {
+      seen.add(current.id);
       const t = current.data.properties?.targetType;
       if (t === 'browser' || t === 'desktop') {
         return { targetType: t, windowTitle: String(current.data.properties?.windowTitle ?? '') };
@@ -46,7 +48,9 @@ function PropertiesContent() {
 
   const scopedVariables = (() => {
     let current: typeof selectedNode | undefined = selectedNode;
-    while (current) {
+    const seen = new Set<string>();
+    while (current && !seen.has(current.id)) {
+      seen.add(current.id);
       if (current.data.activityId === 'for-each' && current.data.loopVariable) {
         return [...variables, {
           id: `loop-${current.id}`,

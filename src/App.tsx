@@ -17,6 +17,7 @@ import { ThemeSwitcher } from './components/ThemeSwitcher';
 import { applyStudioTheme, useThemeStore } from './store/themeStore';
 import { useUiTargetStore } from './store/uiTargetStore';
 import { resolveTargetBindings } from './shared/uiTargets';
+import { analyzeCurrentWorkflow } from './engine/analyzeCurrentWorkflow';
 
 type Tab = 'design' | 'debug';
 
@@ -74,6 +75,7 @@ function App() {
   // File commands work from any part of the app; activity clipboard commands leave text fields alone.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F8' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) { e.preventDefault(); analyzeCurrentWorkflow(); return; }
       if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
       const key = e.key.toLowerCase();
       const workflow = useWorkflowStore.getState();
