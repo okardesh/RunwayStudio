@@ -4,6 +4,7 @@ import { ActivityPanel } from './components/ActivityPanel/ActivityPanel';
 import { SequenceCanvas } from './components/SequenceCanvas/SequenceCanvas';
 import { PropertiesPanel } from './components/PropertiesPanel/PropertiesPanel';
 import { StatusBar } from './components/StatusBar/StatusBar';
+import { RobotJobsMonitor } from './components/RobotJobs/RobotJobsPanel';
 import { BottomPanel } from './components/BottomPanel/BottomPanel';
 import { useWorkflowStore } from './store/workflowStore';
 import { useUiStore } from './store/uiStore';
@@ -137,6 +138,7 @@ function App() {
         </div>
       </header>
 
+      <RobotJobsMonitor connection={runwayConnection} />
       <Toolbar activeTab={activeTab} onPublish={() => setShowPublishModal(true)} />
 
       <div className="app__body">
@@ -145,7 +147,7 @@ function App() {
           <SequenceCanvas />
           <PropertiesPanel />
         </div>
-        <BottomPanel />
+        <BottomPanel connection={runwayConnection} />
       </div>
 
       <StatusBar />

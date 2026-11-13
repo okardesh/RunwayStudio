@@ -76,6 +76,12 @@ Robot posts the execution result to `callbackUrl` with the same `X-API-Key` and 
 
 Failed jobs use `"status": "failed"` and include an `error` field plus the collected job log.
 
+## Studio Robot Jobs
+
+Studio's **Jobs** panel can select an online Robot and an exact published portable package version, supply typed In arguments, monitor live logs and stop a queued/running job. Results, Out arguments and called workflow summaries appear in Run History. Running jobs stop cooperatively after the current native activity returns; subsequent activities do not start.
+
+This Robot build also supports authenticated `GET /api/robot/jobs/:jobId` and `POST /api/robot/jobs/:jobId/stop`. `stopped` completion callbacks include a redacted `job` snapshot. The Maestro server requires the accompanying Python route adapter and a rebuild/restart. See [Robot Jobs integration and verification](../tests/robot-jobs/README.md).
+
 ## Windows installer
 
 Build the unified Windows installer from the Studio workspace root:

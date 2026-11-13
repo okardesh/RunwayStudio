@@ -5,7 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { executeActivity } from '../../electron/automation/index.js';
-import { executeRobotWorkflow, type RobotWorkflowResult } from './workflowRuntime';
+import type { RobotWorkflowResult } from './workflowRuntime';
+import { RobotJobRegistry, type RobotTrigger } from './jobRegistry';
+import type { RobotJobView } from '../../src/shared/robotJobs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.join(__dirname, '..');
@@ -28,15 +30,18 @@ type LicenseResponse = {
   message?: string;
   error?: string;
 };
-type Trigger = { jobId: string; workflowId?: string; workflow?: { definition?: unknown } | Record<string, unknown>; definition?: unknown; inputs?: Record<string, unknown>; callbackUrl: string };
+type Trigger = RobotTrigger;
 type JobLog = { timestamp: string; level: 'info' | 'error'; message: string };
 
 let tray: Tray | null = null;
 let connectionWindow: BrowserWindow | null = null;
 let listener: http.Server | null = null;
 let isQuitting = false;
-let activeJob = false;
-const queue: Trigger[] = [];
+const jobs = new RobotJobRegistry(executeActivity, async (trigger, view, result) => {
+  await report(trigger, view.status as 'success' | 'failed' | 'stopped', view.logs, view.error, result, view);
+  refreshTray();
+  new Notification({ title: 'Runway Robot', body: `Job ${view.jobId}: ${view.status}` }).show();
+});
 let connection: { serverUrl: string; apiKey: string; deviceName: string } | null = null;
 
 function logoPath() {
@@ -103,6 +108,7 @@ async function licenseRequest(serverUrl: string, action: 'register' | 'heartbeat
 }
 async function connectToRunway(value: string) {
   const serverUrl = normalizeUrl(value);
+  if (connection && connection.serverUrl !== serverUrl && (jobs.running || jobs.queued)) throw Error('Finish or stop current jobs before changing Runway servers.');
   const settings = readSettings();
   const deviceName = hostname();
   await startListener();
@@ -134,61 +140,43 @@ function send(response: ServerResponse, status: number, body: unknown) {
   response.writeHead(status, { 'Content-Type': 'application/json' });
   response.end(JSON.stringify(body));
 }
-function log(logs: JobLog[], level: JobLog['level'], message: string) { logs.push({ timestamp: new Date().toISOString(), level, message }); }
-async function report(trigger: Trigger, status: 'success' | 'failed', logs: JobLog[], error?: string, result?: RobotWorkflowResult) {
+async function report(trigger: Trigger, status: 'success' | 'failed' | 'stopped', logs: JobLog[], error?: string, result?: RobotWorkflowResult, view?: RobotJobView) {
   const callbackUrl = new URL(trigger.callbackUrl);
   if (!connection || (callbackUrl.protocol !== 'http:' && callbackUrl.protocol !== 'https:')) return;
   try {
     const response = await fetch(callbackUrl, {
-      method: 'POST',
+      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(12000),
       headers: { 'Content-Type': 'application/json', 'X-API-Key': connection.apiKey, 'X-Tenant-Id': ORGANIZATION_ID },
-      body: JSON.stringify({ jobId: trigger.jobId, workflowId: trigger.workflowId, status, logs, error, ...(result ? { outputs: result.outputs, package: result.package, workflowCalls: result.calls } : {}), completedAt: new Date().toISOString(), apiKey: connection.apiKey }),
+      body: JSON.stringify({ jobId: trigger.jobId, workflowId: trigger.workflowId, status, logs, error, ...(view ? { job: view } : {}), ...(result ? { outputs: result.outputs, package: result.package, workflowCalls: result.calls } : {}), completedAt: new Date().toISOString(), apiKey: connection.apiKey }),
     });
-    if (!response.ok) console.error(`Runway rejected the ${status} callback for job ${trigger.jobId}: HTTP ${response.status}.`);
+    if (!response.ok) throw Error(`Runway callback returned HTTP ${response.status}.`);
   } catch (reason) {
     console.error(`Robot could not report ${status} for job ${trigger.jobId}:`, reason);
-  }
-}
-async function drainQueue() {
-  if (activeJob || !connection) return;
-  const trigger = queue.shift();
-  if (!trigger) return;
-  activeJob = true;
-  const logs: JobLog[] = [];
-  try {
-    const definition = trigger.definition
-      ?? (trigger.workflow && 'definition' in trigger.workflow ? trigger.workflow.definition : trigger.workflow);
-    if (!definition || typeof definition !== 'object') throw new Error('Trigger is missing a workflow definition.');
-    log(logs, 'info', `Robot accepted job ${trigger.jobId}.`);
-    const result = await executeRobotWorkflow(definition, trigger.inputs ?? {}, executeActivity, (level, message) => log(logs, level, message));
-    log(logs, 'info', `Job ${trigger.jobId} completed successfully.`);
-    await report(trigger, 'success', logs, undefined, result);
-    new Notification({ title: 'Runway Robot', body: `Job ${trigger.jobId} completed.` }).show();
-  } catch (reason) {
-    const error = reason instanceof Error ? reason.message : 'Workflow execution failed.';
-    log(logs, 'error', error);
-    await report(trigger, 'failed', logs, error);
-    new Notification({ title: 'Runway Robot', body: `Job ${trigger.jobId} failed.` }).show();
-  } finally {
-    activeJob = false;
-    refreshTray();
-    void drainQueue();
+    throw Error('Runway completion callback could not be delivered.');
   }
 }
 function startListener(): Promise<void> {
   if (listener?.listening) return Promise.resolve();
   if (listener) throw new Error(`Robot listener is starting on port ${LISTENER_PORT}.`);
   listener = http.createServer(async (request, response) => {
-    if (request.method === 'GET' && request.url === '/health') return send(response, 200, { ok: true, connected: !!connection, activeJob, queued: queue.length });
-    if (request.method !== 'POST' || request.url !== '/api/robot/jobs') return send(response, 404, { ok: false, error: 'Not found.' });
+    if (request.method === 'GET' && request.url === '/health') return send(response, 200, { ok: true, connected: !!connection, activeJob: jobs.running, queued: jobs.queued });
+
     if (!connection || request.headers['x-api-key'] !== connection.apiKey) return send(response, 401, { ok: false, error: 'Unauthorized.' });
+    const route = new URL(request.url ?? '/', 'http://robot');
+    const match = route.pathname.match(/^\/api\/robot\/jobs\/([a-zA-Z0-9_-]{1,120})(\/stop)?$/);
+    if (match && (request.method === 'GET' && !match[2] || request.method === 'POST' && match[2])) {
+      const job = match[2] ? await jobs.stop(match[1]) : jobs.get(match[1]);
+      return send(response, job ? 200 : 404, job ? { ok: true, job } : { ok: false, error: 'Job not found or no longer retained.' });
+    }
+    if (request.method !== 'POST' || route.pathname !== '/api/robot/jobs') return send(response, 404, { ok: false, error: 'Not found.' });
     try {
       const trigger = JSON.parse(await readRequest(request)) as Trigger;
       if (!trigger.jobId || !trigger.callbackUrl || (!trigger.definition && !trigger.workflow)) return send(response, 400, { ok: false, error: 'jobId, callbackUrl, and workflow are required.' });
-      queue.push(trigger);
-      send(response, 202, { ok: true, jobId: trigger.jobId, status: 'queued' });
+      if (!/^[a-zA-Z0-9_-]{1,120}$/.test(trigger.jobId)) throw Error('Invalid job ID.');
+      if (new URL(trigger.callbackUrl).origin !== new URL(connection.serverUrl).origin) throw Error('Callback must belong to the connected Runway server.');
+      const job = jobs.submit(trigger);
+      send(response, 202, { ok: true, jobId: trigger.jobId, status: job.status });
       refreshTray();
-      void drainQueue();
     } catch {
       send(response, 400, { ok: false, error: 'Invalid job JSON.' });
     }
@@ -202,10 +190,10 @@ function startListener(): Promise<void> {
 }
 function refreshTray() {
   if (!tray) return;
-  tray.setToolTip(connection ? `Runway Robot: ${activeJob ? 'running a job' : 'connected'}` : 'Runway Robot: not connected');
+  tray.setToolTip(connection ? `Runway Robot: ${jobs.running ? 'running a job' : 'connected'}` : 'Runway Robot: not connected');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: connection ? `Connected to ${connection.serverUrl}` : 'Not connected', enabled: false },
-    { label: activeJob ? 'Job running' : `${queue.length} queued job${queue.length === 1 ? '' : 's'}`, enabled: false },
+    { label: jobs.running ? 'Job running' : `${jobs.queued} queued job${jobs.queued === 1 ? '' : 's'}`, enabled: false },
     { type: 'separator' },
     { label: 'Connection settings', click: () => { showConnectionWindow(); } },
     { label: 'Quit Robot', click: () => { isQuitting = true; app.quit(); } },

@@ -3,6 +3,7 @@ import { useExecutionHistoryStore, type ExecutionStep } from '../../store/execut
 import { useWorkflowStore } from '../../store/workflowStore';
 import { useUiStore } from '../../store/uiStore';
 import './RunHistoryPanel.css';
+import { RobotJobDetails } from '../RobotJobs/RobotJobsPanel';
 
 const duration = (start: number, end?: number) => end === undefined ? 'In progress' : `${Math.max(0, end - start).toLocaleString()} ms`;
 
@@ -21,7 +22,7 @@ export function RunHistoryPanel() {
   const selectRun = (id: string) => { setRunId(id); setStepId(null); useUiStore.setState({ selectedHistoryRunId: id }); };
   const steps = run?.steps.filter((s) => !errorsOnly || s.status === 'error') ?? [];
   const step = steps.find((s) => s.id === stepId) ?? steps.find((s) => s.status === 'error') ?? steps[0];
-  const sameWorkflow = run && (run.filePath ? run.filePath === workflow.filePath : run.projectName === workflow.projectName);
+  const sameWorkflow = run && !run.robotJob && (run.filePath ? run.filePath === workflow.filePath : run.projectName === workflow.projectName);
   const canReveal = (s: ExecutionStep) => sameWorkflow && workflow.nodes.some((n) => n.id === s.nodeId && n.data.activityId === s.activityId);
   const reveal = (s: ExecutionStep) => {
     if (!canReveal(s)) return;
@@ -50,6 +51,7 @@ export function RunHistoryPanel() {
         <nav className="rh-runs" aria-label="Workflow runs">
           {runs.map((r) => <button key={r.id} className={`rh-run${r.id === run.id ? ' rh-selected' : ''}`} onClick={() => { setRunId(r.id); setStepId(null); }}>
             <strong>{r.projectName}</strong><time>{new Date(r.startedAt).toLocaleString()}</time>
+            {r.robotJob && <span>Robot · {r.robotJob.robotName} · {r.robotJob.version} · {r.robotJob.status}</span>}
             {r.parentRunId && <span>↳ Called workflow · depth {r.callDepth}</span>}
             {r.test && <span className={`rh-test-label te-status--${r.test.status}`}>Test {r.test.status} · {r.test.testName} / {r.test.rowName}</span>}
             <span><span className={`rh-status rh-status--${r.status}`}>{r.status}</span> · {duration(r.startedAt, r.endedAt)}{r.debug ? ' · Debug' : ''}</span>
@@ -58,12 +60,14 @@ export function RunHistoryPanel() {
         <section className="rh-timeline" aria-label="Activity timeline">
           <div className="rh-filter"><label><input type="checkbox" checked={errorsOnly} onChange={(e) => setErrorsOnly(e.target.checked)} /> Errors only</label><span>{run.steps.length} activities</span></div>
           {run.truncated && <div className="rh-notice">History limit reached. Only the first activities were retained.</div>}
-          {steps.length === 0 && <div className="bp-empty">{run.error || 'No matching activities.'}</div>}
+          {run.robotJob && <div className="rh-notice">Robot job · {run.robotJob.status}<br />{run.robotJob.robotName} · version {run.robotJob.version}<br />See logs and arguments in the details pane.</div>}
+          {!run.robotJob && steps.length === 0 && <div className="bp-empty">{run.error || 'No matching activities.'}</div>}
           {steps.map((s, index) => <button key={s.id} className={`rh-step${s.id === step?.id ? ' rh-selected' : ''}`} onClick={() => { setStepId(s.id); reveal(s); }}>
             <span className={`rh-dot rh-status--${s.status}`} aria-label={s.status} /><span className="rh-step-label">{index + 1}. {s.label}<small>{s.activityId} · {s.status}</small></span><time>{duration(s.startedAt, s.endedAt)}</time>
           </button>)}
         </section>
         <section className="rh-detail" aria-label="Activity details">
+          {run.robotJob && <RobotJobDetails job={run.robotJob} />}
           {(run.parentRunId || children.length > 0) && <div className="rh-call-links" aria-label="Workflow call links">{run.parentRunId && <button disabled={!parentRun} onClick={() => parentRun && selectRun(parentRun.id)}>Caller: {parentRun?.projectName ?? 'Not retained in history'}</button>}{children.map((child) => <button key={child.id} onClick={() => selectRun(child.id)}>Called: {child.projectName} · {child.status}</button>)}</div>}
           {run.arguments && <details><summary>Workflow arguments</summary><strong>In</strong><pre>{JSON.stringify(run.arguments.inputs, null, 2)}</pre><strong>Out</strong><pre>{JSON.stringify(run.arguments.outputs ?? {}, null, 2)}</pre></details>}
           {run.test && <section className="rh-test-results" aria-label="Test assertions">
@@ -73,7 +77,7 @@ export function RunHistoryPanel() {
             {!run.test.assertions.length && <p>{run.test.status === 'running' ? 'Assertions run after the workflow completes.' : 'Assertions were not evaluated because the workflow did not complete.'}</p>}
             {run.test.assertions.map((a) => <details key={a.expression} open={!a.passed}><summary className={a.passed ? 'te-status--passed' : 'te-status--failed'}>{a.passed ? 'Passed' : 'Failed'} · {a.expression}</summary><div>Expected<pre>{a.expected}</pre>Actual<pre>{a.actual}</pre>{a.error && <p>{a.error}</p>}</div></details>)}
           </section>}
-          {step ? <>
+          {!run.robotJob && (step ? <>
             <div className="rh-detail-heading"><strong>{step.label}</strong><button disabled={!canReveal(step)} onClick={() => reveal(step)}>Show on canvas</button></div>
             {!canReveal(step) && <div className="rh-notice">Open the original workflow to locate this activity. The saved details remain available.</div>}
             <p>{step.status} · {duration(step.startedAt, step.endedAt)} · {new Date(step.startedAt).toLocaleTimeString()}</p>
@@ -83,7 +87,7 @@ export function RunHistoryPanel() {
             {step.screenshot && <button className="rh-image" onClick={() => setPreview(step.screenshot!)} title="Enlarge error screenshot"><img src={step.screenshot} alt={`Desktop at failure: ${step.label}`} /></button>}
             {step.screenshotNote && <p>{step.screenshotNote}</p>}
             {step.screenshot && <small>First display at failure time. Screenshots can include visible application data.</small>}
-          </> : <div className="bp-empty">Select an activity to inspect its details.</div>}
+          </> : <div className="bp-empty">Select an activity to inspect its details.</div>)}
         </section>
       </div>}
     {preview && <div className="rh-preview" role="dialog" aria-modal="true" aria-label="Error screenshot" onKeyDown={(e) => { if (e.key === 'Escape') setPreview(null); }} onClick={() => setPreview(null)}><button autoFocus onClick={() => setPreview(null)}>Close screenshot</button><img src={preview} alt="Desktop at failure time" /></div>}

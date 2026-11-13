@@ -8,7 +8,7 @@ export interface LoadedWorkflow { path: string; definition: WorkflowDefinition }
 export type WorkflowLoader = (requestedPath: string, callerPath: string | null) => Promise<LoadedWorkflow>;
 export const workflowPathKey = (path: string) => path.replace(/\\/g, '/').toLowerCase();
 export const validArgumentName = (name: string) => /^[A-Za-z_]\w*$/.test(name) && !['__proto__', 'constructor', 'prototype'].includes(name);
-function supportedArgumentType(type: string, depth = 0): boolean {
+export function supportedArgumentType(type: string, depth = 0): boolean {
   if (depth > 10 || type.length > 200) return false;
   if (['String', 'Boolean', 'DateTime', 'Object', 'Array', 'List', 'Byte', 'SByte', 'Int16', 'Int32', 'Int64', 'UInt16', 'UInt32', 'UInt64', 'Single', 'Double', 'Decimal'].includes(type)) return true;
   const element = type.match(/^List<(.+)>$/)?.[1] ?? (type.endsWith('[]') ? type.slice(0, -2) : undefined);

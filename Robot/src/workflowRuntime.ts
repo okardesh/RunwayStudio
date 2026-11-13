@@ -11,8 +11,10 @@ const own = (value: object, key: string) => Object.prototype.hasOwnProperty.call
 function legacyDefinition(input: any): WorkflowDefinition {
   return parseWorkflowDefinition(JSON.stringify({ projectName: input.projectName ?? 'Workflow', nodes: (input.nodes ?? []).map((node: any) => ({ ...node, data: { ...node.data, label: node.data?.label ?? node.id, properties: node.data?.properties ?? {}, isContainer: node.data?.isContainer ?? !!node.data?.childIds?.length } })), edges: input.edges ?? [], variables: (input.variables ?? []).map((v: any) => ({ id: v.id ?? v.name, type: v.type ?? 'Object', scope: v.scope ?? 'Main', ...v })), arguments: input.arguments ?? [], uiTargets: input.uiTargets ?? [] }));
 }
+export class RobotJobStoppedError extends Error { constructor() { super('Job stopped at an activity boundary.'); this.name = 'RobotJobStoppedError'; } }
+export interface RobotRunOptions { signal?: AbortSignal; live?: boolean; onSecret?: (value: string) => void }
 /** Resolves calls solely from the submitted package, never the Robot filesystem. */
-export async function executeRobotWorkflow(input: unknown, inputs: Record<string, unknown>, native: RobotActivity, onLog: (level: 'info' | 'error', message: string) => void): Promise<RobotWorkflowResult> {
+export async function executeRobotWorkflow(input: unknown, inputs: Record<string, unknown>, native: RobotActivity, onLog: (level: 'info' | 'error', message: string) => void, options: RobotRunOptions = {}): Promise<RobotWorkflowResult> {
   if (!input || typeof input !== 'object' || Array.isArray(input) || !inputs || typeof inputs !== 'object' || Array.isArray(inputs)) throw Error('Invalid workflow or job inputs.');
   let manifest: PortableWorkflowPackage | undefined;
   let loader: Awaited<ReturnType<typeof validatePortablePackage>>['loader'] | undefined;
@@ -22,20 +24,28 @@ export async function executeRobotWorkflow(input: unknown, inputs: Record<string
     definition = legacyDefinition(input); validateRobotWorkflow(definition); resolveTargetBindings(definition.nodes, definition.uiTargets ?? []);
     if (definition.nodes.some((n) => n.data.activityId === 'invoke-workflow')) throw Error('Invoke Workflow requires a portable package. Republish from Studio.');
   }
+  const checkStop = () => { if (options.signal?.aborted) throw new RobotJobStoppedError(); };
+  checkStop();
   const secrets = new Set<string>(), events: Array<{ level: 'info' | 'error'; message: string }> = [];
   const calls: RobotWorkflowResult['calls'] = [];
   let steps = 0;
   const collect = (value: unknown) => {
     const pending = [{ value, depth: 0 }], seen = new Set<object>(); let count = 0;
     while (pending.length && count++ < 20000) { const item = pending.pop()!; if (!item.value || typeof item.value !== 'object' || item.depth > 20 || seen.has(item.value)) continue; seen.add(item.value);
-      for (const [key, next] of Object.entries(item.value)) { if (/password|secret|token|api.?key|credential|authorization/i.test(key) && typeof next === 'string' && next) secrets.add(next); if (next && typeof next === 'object') pending.push({ value: next, depth: item.depth + 1 }); }
+      for (const [key, next] of Object.entries(item.value)) { if (/password|secret|token|api.?key|credential|authorization/i.test(key) && typeof next === 'string' && next) { secrets.add(next); options.onSecret?.(next); } if (next && typeof next === 'object') pending.push({ value: next, depth: item.depth + 1 }); }
     }
   };
   const clean = (message: string) => { let text = message; for (const secret of [...secrets].sort((a, b) => b.length - a.length)) text = text.split(secret).join('[REDACTED]'); return text.slice(0, 4000); };
   let logSize = 0;
-  const emit = (level: 'info' | 'error', message: string) => { if (events.length < 2000 && logSize + message.length <= 2_000_000) { events.push({ level, message }); logSize += message.length; } };
-  const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+  const emit = (level: 'info' | 'error', message: string) => { if (events.length < 2000 && logSize + message.length <= 2_000_000) { events.push({ level, message }); if (options.live) onLog(level, clean(message)); logSize += message.length; } };
+  const wait = (ms: number) => new Promise<void>((resolve, reject) => {
+    checkStop();
+    const abort = () => { clearTimeout(timer); reject(new RobotJobStoppedError()); };
+    const timer = setTimeout(() => { options.signal?.removeEventListener('abort', abort); resolve(); }, ms);
+    options.signal?.addEventListener('abort', abort, { once: true });
+  });
   const run = async (workflow: WorkflowDefinition, provided: Record<string, unknown>, depth: number, path: string, chain: string[]): Promise<Record<string, unknown>> => {
+    checkStop();
     if (depth > 16 || chain.includes(path)) throw Error('Workflow call depth or recursion limit reached.');
     const nodes = resolveTargetBindings(workflow.nodes, manifest?.uiTargets ?? workflow.uiTargets ?? []), byId = new Map(nodes.map((n) => [n.id, n]));
     const values: Record<string, unknown> = Object.create(null);
@@ -52,6 +62,7 @@ export async function executeRobotWorkflow(input: unknown, inputs: Record<string
     const sequence = async (list: typeof nodes): Promise<Flow> => { for (const node of list) { const flow = await runNode(node); if (flow !== 'normal') return flow; } return 'normal'; };
     const condition = (expression: string) => { const result = evaluateBreakpointCondition(expression, values); if (result.error) throw Error(`Invalid branch condition: ${result.error}`); return !!result.value; };
     const runNode = async (node: typeof nodes[number]): Promise<Flow> => {
+      checkStop();
       if (++steps > 10000) throw Error('Robot activity execution limit reached (10,000).');
       const d = node.data, p = d.properties, id = d.activityId;
       collect(p); emit('info', `Starting ${name} / ${d.label}`);
@@ -64,6 +75,7 @@ export async function executeRobotWorkflow(input: unknown, inputs: Record<string
           try { const resolved = resolveArgumentInput((p.inArguments as Record<string, unknown>)[arg.name], values); supplied[arg.name] = argumentValue(resolved.value, arg.type, resolved.authoredText); } catch { throw Error(`Input argument "${arg.name}" does not match ${arg.type}.`); }
         }
         const returned = await run(loaded.definition, supplied, depth + 1, loaded.path, [...chain, path]);
+        checkStop();
         const outputs: Record<string, unknown> = Object.create(null);
         for (const arg of loaded.definition.arguments.filter((a) => a.direction === 'Out')) { const target = (p.outArguments as Record<string, string> | undefined)?.[arg.name]; if (target) outputs[target] = cloneArgument(returned[arg.name]); }
         Object.assign(values, outputs); collect(values); return 'normal';
@@ -86,15 +98,15 @@ export async function executeRobotWorkflow(input: unknown, inputs: Record<string
       if (id === 'retry-scope') {
         const retries = Number(resolveArgumentInput(p.maxRetries ?? 3, values).value), delay = Number(resolveArgumentInput(p.retryDelay ?? 1000, values).value);
         if (!Number.isSafeInteger(retries) || retries < 0 || retries > 1000 || !Number.isFinite(delay) || delay < 0 || delay > 120000) throw Error('Invalid retry count or delay.');
-        for (let attempt = 0; ; attempt++) { try { return await sequence(children(d.childIds ?? [])); } catch (error) { if (attempt >= retries) throw error; emit('info', `Retry ${attempt + 1} in ${name}`); if (delay) await wait(delay); } }
+        for (let attempt = 0; ; attempt++) { try { return await sequence(children(d.childIds ?? [])); } catch (error) { checkStop(); if (attempt >= retries) throw error; emit('info', `Retry ${attempt + 1} in ${name}`); if (delay) await wait(delay); } }
       }
       if (id === 'try-catch') {
         const branches = d.branches ?? [], tried = branches.find((b) => b.kind === 'try')!, final = branches.find((b) => b.kind === 'finally');
         let flow: Flow = 'normal', failure: unknown;
         try { flow = await sequence(children(tried.childIds)); } catch (error) {
-          failure = error;
+          checkStop(); failure = error;
           for (const branch of branches.filter((b) => b.kind === 'catch')) { try { flow = await sequence(children(branch.childIds)); failure = undefined; break; } catch (caught) { failure = caught; } }
-        } finally { if (final) { const finalFlow = await sequence(children(final.childIds)); if (finalFlow !== 'normal') flow = finalFlow; } }
+        } finally { if (final && !options.signal?.aborted) { const finalFlow = await sequence(children(final.childIds)); if (finalFlow !== 'normal') flow = finalFlow; } }
         if (failure) throw failure; return flow;
       }
       if (id === 'sequence') return sequence(children(d.childIds ?? []));
@@ -111,13 +123,14 @@ export async function executeRobotWorkflow(input: unknown, inputs: Record<string
       } else {
         const resolved = Object.fromEntries(Object.entries(p).map(([key, value]) => [key, ['output','to'].includes(key) || id === 'log-message' && key === 'message' ? value : typeof value === 'string' && value.includes('{{') ? resolveArgumentInput(value, values).value : value]));
         if (id === 'log-message') resolved.message = resolveLogMessage(p.message, values);
-        const result = await native(id, resolved); collect(result.outputs); emit(result.success ? 'info' : 'error', result.log);
+        const result = await native(id, resolved); checkStop(); collect(result.outputs); emit(result.success ? 'info' : 'error', result.log);
         if (!result.success) throw Error(result.log || `Activity failed: ${id}`);
         Object.assign(values, result.outputs ?? {}); collect(values);
       }
       return d.isContainer ? sequence(children(d.childIds ?? [])) : 'normal';
     };
     await sequence(nodes.filter((n) => !n.data.parentId));
+    checkStop();
     const outputs: Record<string, unknown> = Object.create(null);
     for (const arg of workflow.arguments.filter((a) => a.direction === 'Out')) {
       try { outputs[arg.name] = argumentValue(values[arg.name], arg.type); } catch { throw Error(`Output argument "${arg.name}" does not match ${arg.type}.`); }
@@ -129,6 +142,6 @@ export async function executeRobotWorkflow(input: unknown, inputs: Record<string
     if (manifest) emit('info', `Package ${manifest.id} · version ${manifest.version}`);
     const outputs = await run(definition, inputs, 0, manifest ? PACKAGE_PREFIX + manifest.entryWorkflowId : '<legacy>', []);
     return { outputs, calls, ...(manifest ? { package: { id: manifest.id, version: manifest.version } } : {}) };
-  } catch (error) { throw Error(clean(error instanceof Error ? error.message : 'Workflow execution failed.')); }
-  finally { for (const event of events) onLog(event.level, clean(event.message)); }
+  } catch (error) { checkStop(); throw Error(clean(error instanceof Error ? error.message : 'Workflow execution failed.')); }
+  finally { if (!options.live) for (const event of events) onLog(event.level, clean(event.message)); }
 }

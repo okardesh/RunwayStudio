@@ -1,0 +1,35 @@
+.robot-jobs { height: 100%; display: flex; flex-direction: column; color: var(--studio-text); min-width: 0; }
+.rj-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--studio-border); flex-wrap: wrap; }
+.rj-toolbar > div:first-child { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.robot-jobs small, .rj-log-heading small { color: var(--studio-muted); font-size: 11px; }
+.robot-jobs button, .robot-jobs input, .robot-jobs select { font: inherit; color: var(--studio-text); border: 1px solid var(--studio-border); border-radius: 6px; background: var(--studio-panel); padding: 7px 9px; }
+.robot-jobs button { cursor: pointer; }
+.robot-jobs button:disabled { opacity: .45; cursor: default; }
+.robot-jobs button:focus-visible, .robot-jobs input:focus-visible, .robot-jobs select:focus-visible { outline: 2px solid var(--studio-blue); outline-offset: 2px; }
+.rj-layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); min-height: 0; flex: 1; overflow: hidden; }
+.rj-launch { display: flex; flex-direction: column; gap: 12px; padding: 16px; overflow: auto; border-right: 1px solid var(--studio-border); }
+.rj-launch label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.rj-launch select, .rj-launch input { width: 100%; min-width: 0; box-sizing: border-box; }
+.rj-launch .rj-primary { background: var(--studio-blue); color: var(--studio-bg); font-weight: 600; }
+.rj-jobs { display: grid; grid-template-columns: 210px minmax(0, 1fr); overflow: hidden; min-height: 0; }
+.rj-jobs nav { display: flex; flex-direction: column; overflow: auto; border-right: 1px solid var(--studio-border); }
+.rj-jobs nav button { text-align: left; display: flex; flex-direction: column; gap: 7px; border: 0; border-bottom: 1px solid var(--studio-border); border-radius: 0; padding: 14px; overflow-wrap: anywhere; }
+.rj-jobs nav .rj-selected { background: var(--studio-hover); box-shadow: inset 3px 0 var(--studio-blue); }
+.rj-detail { overflow: auto; min-width: 0; }
+.rj-detail > details, .rj-package-id, .rj-log-heading { margin: 12px 16px; }
+.rj-package-id { display: block; overflow-wrap: anywhere; color: var(--studio-muted); font-size: 10px; }
+.rj-launch > .rj-package-id { margin: 0; }
+.rj-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.rj-status { font-size: 12px; color: var(--studio-blue); }
+.rj-status--success { color: var(--studio-green); }
+.rj-status--failed, .rj-error { color: var(--studio-red); }
+.rj-notice { padding: 10px 16px; border-bottom: 1px solid var(--studio-border); font-size: 12px; line-height: 1.6; }
+.rj-notice button { display: block; margin-top: 8px; }
+.rj-log-heading { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.rj-logs { padding: 10px 16px; font-family: Consolas, monospace; font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
+.rj-logs > div { display: flex; align-items: baseline; gap: 12px; }
+.rj-logs time { color: var(--studio-muted); flex-shrink: 0; }
+.rj-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.app .bottom-panel.bottom-panel--jobs { height: clamp(320px, 48vh, 540px); min-height: 260px; }
+@media (max-width: 1200px) { .rj-layout { grid-template-columns: 235px minmax(0, 1fr); } .rj-jobs { grid-template-columns: 160px minmax(0, 1fr); } }
+@media (max-width: 850px) { .rj-layout { display: flex; flex-direction: column; overflow: auto; } .rj-launch { overflow: visible; } .rj-jobs { overflow: visible; min-height: 230px; grid-template-columns: 150px minmax(0, 1fr); flex-shrink: 0; } }

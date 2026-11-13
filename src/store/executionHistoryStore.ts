@@ -33,6 +33,7 @@ export interface ExecutionRun {
   error?: string;
   truncated?: boolean;
   test?: TestRunResult;
+  robotJob?: import('./robotJobsStore').RemoteJob;
 }
 
 const KEY = 'runway.execution-history.v1';

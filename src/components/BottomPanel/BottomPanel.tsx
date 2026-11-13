@@ -10,6 +10,9 @@ import { DebugPanel } from '../DebugPanel/DebugPanel';
 import { TestExplorer } from '../TestExplorer/TestExplorer';
 import { WorkflowAnalyzerPanel } from '../WorkflowAnalyzer/WorkflowAnalyzerPanel';
 
+import { RobotJobsPanel } from '../RobotJobs/RobotJobsPanel';
+import type { RunwayConnection } from '../../engine/runwayConnection';
+
 type SubTab = 'variables' | 'arguments' | 'namespaces' | 'connections';
 
 const PRIMARY_TYPES = ['String', 'Boolean', 'Int32', 'Double', 'DateTime', 'Object', 'List'];
@@ -31,7 +34,7 @@ const LEVEL_COLORS: Record<string, string> = {
   Info: 'var(--studio-blue)', Warning: 'var(--studio-warning)', Error: 'var(--studio-red)', Debug: 'var(--studio-subtle)',
 };
 
-export function BottomPanel() {
+export function BottomPanel({ connection = null }: { connection?: RunwayConnection | null }) {
   const [subTab, setSubTab] = useState<SubTab>('variables');
   const { variables, addVariable, removeVariable, updateVariable, arguments: workflowArguments, addArgument, removeArgument, updateArgument } = useWorkflowStore();
   const { outputMessages, clearOutput, activeBottomPanelTab: mainTab, setActiveBottomPanelTab } = useUiStore();
@@ -130,6 +133,7 @@ export function BottomPanel() {
   const mainTabs = [
     { id: 'dataManager' as BottomPanelTab, label: 'Data Manager' },
     { id: 'output' as BottomPanelTab, label: 'Output' },
+    { id: 'jobs' as BottomPanelTab, label: 'Robot Jobs' },
     { id: 'history' as BottomPanelTab, label: 'Run History' },
     { id: 'targets' as BottomPanelTab, label: 'UI Targets' },
     { id: 'debug' as BottomPanelTab, label: 'Locals & Watch' },
@@ -146,7 +150,7 @@ export function BottomPanel() {
   ];
 
   return (
-    <div className={`bottom-panel${mainTab === 'history' ? ' bottom-panel--history' : mainTab === 'targets' ? ' bottom-panel--targets' : mainTab === 'debug' ? ' bottom-panel--debug' : mainTab === 'tests' ? ' bottom-panel--tests' : mainTab === 'errors' ? ' bottom-panel--analyzer' : ''}`}>
+    <div className={`bottom-panel${mainTab === 'jobs' ? ' bottom-panel--jobs' : mainTab === 'history' ? ' bottom-panel--history' : mainTab === 'targets' ? ' bottom-panel--targets' : mainTab === 'debug' ? ' bottom-panel--debug' : mainTab === 'tests' ? ' bottom-panel--tests' : mainTab === 'errors' ? ' bottom-panel--analyzer' : ''}`}>
       <div className="bp__tab-row">
         <div className="bp__main-tabs">
           {mainTabs.map(({ id, label }) => (
@@ -155,7 +159,7 @@ export function BottomPanel() {
               className={`bp__main-tab${mainTab === id ? ' bp__main-tab--active' : ''}`}
               onClick={() => setActiveBottomPanelTab(id)}
             >
-              <Icon name={({ dataManager: 'data', output: 'terminal', history: 'history', targets: 'cursor', debug: 'code', tests: 'shield', markers: 'layers', errors: 'alert' } as Record<BottomPanelTab, IconName>)[id]} size={14} />{label}
+              <Icon name={({ dataManager: 'data', output: 'terminal', history: 'history', jobs: 'play', targets: 'cursor', debug: 'code', tests: 'shield', markers: 'layers', errors: 'alert' } as Record<BottomPanelTab, IconName>)[id]} size={14} />{label}
             </button>
           ))}
         </div>
@@ -176,6 +180,7 @@ export function BottomPanel() {
       </div>
 
       <div className="bp__content">
+        <div hidden={mainTab !== 'jobs'} style={{ height: '100%', minHeight: 0 }}><RobotJobsPanel connection={connection} /></div>
         {mainTab === 'history' && <RunHistoryPanel />}
         <div hidden={mainTab !== 'errors'} style={{ height: '100%', minHeight: 0 }}><WorkflowAnalyzerPanel /></div>
         <div hidden={mainTab !== 'debug'} style={{ height: '100%', minHeight: 0 }}><DebugPanel /></div>
