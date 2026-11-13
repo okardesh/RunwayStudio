@@ -2,6 +2,10 @@
 
 Runway Robot is a Windows Electron tray application that executes published RPA workflow definitions on the local machine.
 
+Studio Publish can now prepare a portable definition containing the main workflow, invoked workflows and referenced UI targets. This Robot build validates the package and resolves Invoke calls from package IDs without reading workflow files from its own disk. In/Out values are typed and copied between isolated call frames; only successful calls return outputs.
+
+Successful callbacks include declared root `outputs`, package `id`/`version`, and a `workflowCalls` summary. Legacy single-file definitions remain supported; unbundled Invoke calls require republishing from Studio. Portable packages require the updated Robot build. See [portable package usage and verification](../tests/portable-publish/README.md).
+
 ## Run
 
 From the Studio workspace root:

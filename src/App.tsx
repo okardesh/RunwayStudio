@@ -157,6 +157,7 @@ function App() {
         edges={edges}
         variables={variables}
         workflowArguments={workflowArguments}
+        filePath={filePath}
         onClose={() => setShowPublishModal(false)}
       />}
     </div>

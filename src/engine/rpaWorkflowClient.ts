@@ -1,4 +1,5 @@
 import type { RunwayConnection } from './runwayConnection';
+import { validatePortablePackage } from '../shared/portableWorkflowPackage';
 
 export interface RpaWorkflowArgument {
   name: string;
@@ -69,6 +70,10 @@ export async function publishRpaWorkflow(
   payload: RpaWorkflowPublishPayload,
 ): Promise<PublishedRpaWorkflow> {
   assertPublishPayload(payload);
+  if ('portablePackage' in payload.definition) {
+    const { manifest } = await validatePortablePackage(payload.definition);
+    if (manifest.version !== (payload.version?.trim() || '1.0.0')) throw Error('Package version must match the publish version.');
+  } else if (Array.isArray(payload.definition.nodes) && payload.definition.nodes.some((n: any) => n?.data?.activityId === 'invoke-workflow')) throw Error('Invoke Workflow publishing requires a portable package.');
   if (!connection.accessToken) throw new Error('No Runway API key is configured. Reconnect Studio and try again.');
   const url = publishUrl(connection);
 

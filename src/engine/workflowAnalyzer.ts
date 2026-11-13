@@ -55,7 +55,7 @@ export function analyzeWorkflow(source: AnalysisSource): AnalysisReport {
     if (['while', 'end'].includes(node.data.activityId) || node.data.activityId.startsWith('outlook-desktop-')) add('WA103', 'warning', node, 'Activity', 'This activity currently falls back to simulated execution in Studio.', 'Do not rely on this activity for real automation until its runtime implementation is available.');
     if (node.data.activityId === 'invoke-workflow') {
       add('WA300', 'warning', node, 'Workflow File', 'Invoked file and argument declarations need a dependency check.', 'Use Analyze in the desktop app to read and validate this workflow dependency.');
-      add('WA305', 'warning', node, 'Publishing', 'Called workflow files are local dependencies and are not bundled for Runway publishing.', 'Use Studio Run, Debug and Test Explorer for these calls. Remote dependency packaging requires separate support.');
+      add('WA305', 'info', node, 'Publishing', 'Publishing includes called workflows and UI targets in a versioned portable package.', 'Prepare the package in Publish and run it with a Robot version that supports portable packages.');
       const outputs = node.data.properties.outArguments;
       if (outputs && typeof outputs === 'object') for (const target of Object.values(outputs)) if (target && (typeof target !== 'string' || !validArgumentName(target))) add('WA302', 'error', node, 'Out arguments', 'An output mapping is not a valid caller variable name.', 'Use a bare variable name without template braces.');
     }

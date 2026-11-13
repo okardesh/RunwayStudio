@@ -28,6 +28,13 @@
 .publish-modal__message { margin: 0; padding: 9px 10px; border-radius: 3px; font-size: 12px; }
 .publish-modal__message--error { background: #fde7e9; color: #9d1c22; }
 .publish-modal__message--success { background: #e2f2e6; color: #165c27; }
+.publish-package { border: 1px solid var(--studio-border); background: var(--studio-surface); color: var(--studio-text); padding: 12px; border-radius: 6px; font-size: 11px; }
+.publish-package p, .publish-package small { color: var(--studio-muted); line-height: 1.6; }
+.publish-package code { display: block; font-size: 10px; overflow-wrap: anywhere; }
+.publish-package ul { max-height: 100px; overflow: auto; margin: 9px 0; padding-left: 18px; }
+.publish-package__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.publish-package button { border: 1px solid var(--studio-border); background: var(--studio-bg); color: var(--studio-blue); border-radius: 4px; padding: 6px 9px; cursor: pointer; font: inherit; }
+.publish-package button:disabled { opacity: .5; cursor: default; }
 .publish-modal__footer { border-top: 1px solid #d8dfe5; border-bottom: 0; gap: 8px; justify-content: flex-end; }
 .publish-modal__footer button { border: 1px solid #9eabb8; border-radius: 3px; padding: 7px 12px; background: #fff; color: #253443; cursor: pointer; font: inherit; font-size: 12px; }
 .publish-modal__footer .publish-modal__publish { background: #0078d4; border-color: #0078d4; color: #fff; }

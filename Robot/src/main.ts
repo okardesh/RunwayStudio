@@ -5,8 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { executeActivity } from '../../electron/automation/index.js';
-import { resolveLogMessage } from '../../src/shared/logMessageExpression';
-import { resolveTargetBindings, type UiTarget } from '../../src/shared/uiTargets';
+import { executeRobotWorkflow, type RobotWorkflowResult } from './workflowRuntime';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.join(__dirname, '..');
@@ -29,9 +28,7 @@ type LicenseResponse = {
   message?: string;
   error?: string;
 };
-type WorkflowNode = { id: string; data?: { activityId?: string; label?: string; properties?: Record<string, unknown>; childIds?: string[]; parentId?: string; targetBindings?: Record<string, string> } };
-type Trigger = { jobId: string; workflowId?: string; workflow?: { definition?: WorkflowDefinition } | WorkflowDefinition; definition?: WorkflowDefinition; inputs?: Record<string, unknown>; callbackUrl: string };
-type WorkflowDefinition = { nodes?: WorkflowNode[]; edges?: unknown[]; variables?: Array<{ name: string; defaultValue?: unknown }>; uiTargets?: UiTarget[] };
+type Trigger = { jobId: string; workflowId?: string; workflow?: { definition?: unknown } | Record<string, unknown>; definition?: unknown; inputs?: Record<string, unknown>; callbackUrl: string };
 type JobLog = { timestamp: string; level: 'info' | 'error'; message: string };
 
 let tray: Tray | null = null;
@@ -138,41 +135,14 @@ function send(response: ServerResponse, status: number, body: unknown) {
   response.end(JSON.stringify(body));
 }
 function log(logs: JobLog[], level: JobLog['level'], message: string) { logs.push({ timestamp: new Date().toISOString(), level, message }); }
-async function executeWorkflow(definition: WorkflowDefinition, inputs: Record<string, unknown>, logs: JobLog[]) {
-  const nodes = resolveTargetBindings(definition.nodes ?? [], definition.uiTargets ?? []);
-  const values: Record<string, unknown> = Object.fromEntries((definition.variables ?? []).map((variable) => [variable.name, variable.defaultValue]));
-  Object.assign(values, inputs);
-  const nodesById = new Map(nodes.map((node) => [node.id, node]));
-  const resolveProperties = (properties: Record<string, unknown>) => Object.fromEntries(Object.entries(properties).map(([key, value]) => [key, typeof value === 'string' ? value.replace(/\{\{\s*([A-Za-z_]\w*)\s*\}\}/g, (match, name) => name in values ? String(values[name] ?? '') : match) : value]));
-  const runNode = async (node: WorkflowNode): Promise<void> => {
-    const data = node.data;
-    const activityId = data?.activityId;
-    if (!activityId) throw new Error(`Workflow node ${node.id} has no activity ID.`);
-    log(logs, 'info', `Starting ${data?.label ?? activityId}`);
-    const properties = data?.properties ?? {};
-    const resolved = resolveProperties(properties);
-    if (activityId === 'log-message') resolved.message = resolveLogMessage(properties.message, values);
-    const result = await executeActivity(activityId, resolved);
-    log(logs, result.success ? 'info' : 'error', result.log);
-    if (!result.success) throw new Error(result.log || `${activityId} failed.`);
-    Object.assign(values, result.outputs ?? {});
-    for (const childId of data?.childIds ?? []) {
-      const child = nodesById.get(childId);
-      if (child) await runNode(child);
-    }
-  };
-  const topLevel = nodes.filter((node) => !node.data?.parentId);
-  if (!topLevel.length) throw new Error('Published workflow has no executable nodes.');
-  for (const node of topLevel) await runNode(node);
-}
-async function report(trigger: Trigger, status: 'success' | 'failed', logs: JobLog[], error?: string) {
+async function report(trigger: Trigger, status: 'success' | 'failed', logs: JobLog[], error?: string, result?: RobotWorkflowResult) {
   const callbackUrl = new URL(trigger.callbackUrl);
   if (!connection || (callbackUrl.protocol !== 'http:' && callbackUrl.protocol !== 'https:')) return;
   try {
     const response = await fetch(callbackUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-API-Key': connection.apiKey, 'X-Tenant-Id': ORGANIZATION_ID },
-      body: JSON.stringify({ jobId: trigger.jobId, workflowId: trigger.workflowId, status, logs, error, completedAt: new Date().toISOString(), apiKey: connection.apiKey }),
+      body: JSON.stringify({ jobId: trigger.jobId, workflowId: trigger.workflowId, status, logs, error, ...(result ? { outputs: result.outputs, package: result.package, workflowCalls: result.calls } : {}), completedAt: new Date().toISOString(), apiKey: connection.apiKey }),
     });
     if (!response.ok) console.error(`Runway rejected the ${status} callback for job ${trigger.jobId}: HTTP ${response.status}.`);
   } catch (reason) {
@@ -186,13 +156,13 @@ async function drainQueue() {
   activeJob = true;
   const logs: JobLog[] = [];
   try {
-    const definition: WorkflowDefinition | undefined = trigger.definition
-      ?? (trigger.workflow && 'definition' in trigger.workflow ? trigger.workflow.definition : trigger.workflow as WorkflowDefinition | undefined);
+    const definition = trigger.definition
+      ?? (trigger.workflow && 'definition' in trigger.workflow ? trigger.workflow.definition : trigger.workflow);
     if (!definition || typeof definition !== 'object') throw new Error('Trigger is missing a workflow definition.');
     log(logs, 'info', `Robot accepted job ${trigger.jobId}.`);
-    await executeWorkflow(definition, trigger.inputs ?? {}, logs);
+    const result = await executeRobotWorkflow(definition, trigger.inputs ?? {}, executeActivity, (level, message) => log(logs, level, message));
     log(logs, 'info', `Job ${trigger.jobId} completed successfully.`);
-    await report(trigger, 'success', logs);
+    await report(trigger, 'success', logs, undefined, result);
     new Notification({ title: 'Runway Robot', body: `Job ${trigger.jobId} completed.` }).show();
   } catch (reason) {
     const error = reason instanceof Error ? reason.message : 'Workflow execution failed.';
