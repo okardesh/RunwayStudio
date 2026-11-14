@@ -15,6 +15,7 @@ import { assetRunContext } from '../store/assetsStore';
 import { useAssetsStore } from '../store/assetsStore';
 import { QueueRunSession, executeQueueActivity, queueActivities } from '../shared/queues';
 import { createQueueSession } from './queuesClient';
+import { BusinessRuleException, TransactionScopeFailure, executeTransactionScope, resolveScopeValue } from '../shared/transactionScope';
 import type { UiTarget } from '../shared/uiTargets';
 
 export type LogLevel = 'Info' | 'Warning' | 'Error' | 'Debug';
@@ -76,7 +77,7 @@ async function runActivity(
   activityId: string,
   properties: Record<string, unknown>,
   onLog: LogFn
-): Promise<{ success: boolean; outputs?: Record<string, unknown> }> {
+): Promise<{ success: boolean; log?: string; outputs?: Record<string, unknown> }> {
   if (isElectron()) {
     const api = (window as any).electronAPI;
     const result: { success: boolean; log: string; outputs?: Record<string, unknown> } =
@@ -185,7 +186,7 @@ export interface DebugOptions {
 
 interface ExecutionSession { queues?: QueueRunSession; assets?: AssetResolver; environment?: { id: string; name: string }; graph?: WorkflowGraph; targets: UiTarget[]; frames: DebugFrame[]; rootRunId?: string; step: 'run' | StepMode; stepOverDepth: number }
 interface ExecutionFrame { depth: number; parentRunId?: string; invocationNodeId?: string; inheritedSecrets?: string[] }
-interface ExecutionResult { status: 'completed' | 'stopped' | 'error'; values: Record<string, unknown>; secrets: string[] }
+interface ExecutionResult { status: 'completed' | 'stopped' | 'error'; values: Record<string, unknown>; secrets: string[]; failure?: Error }
 export async function executeWorkflow(nodes: Node<WorkflowNodeData>[], edges: Edge[], variables: WorkflowVariable[], onNodeStart: (id: string) => void, onNodeEnd: (id: string) => void, onLog: LogFn, options?: DebugOptions): Promise<'completed' | 'stopped' | 'error'> {
   if (_executing) throw Error('Another workflow is already running. Stop it before starting a new run.');
   _executing = true; _stopRequested = false;
@@ -217,8 +218,9 @@ async function executeWorkflowRecorded(
   session.frames.push(currentFrame);
   const publishFrame = (nodeId: string | null) => { currentFrame.nodeId = nodeId; if (live) useDebugStore.setState({ frames: session.frames.map((f) => ({ ...f })) }); };
   let finalValues: Record<string, unknown> = {};
+  let executionFailure: Error | undefined;
   try {
-    if (frame.depth === 0 && nodes.some((n) => n.data.activityId === 'invoke-workflow')) session.graph = await loadWorkflowGraph({ projectName: currentFrame.projectName, nodes, edges, variables, arguments: debugOptions?.arguments ?? [] }, currentFrame.filePath, debugOptions?.loadWorkflow ?? loadInvokedWorkflow);
+    if (frame.depth === 0 && nodes.some((n) => n.data.activityId === 'invoke-workflow' || n.data.activityId === 'transaction-scope' && n.data.properties.workflowFile)) session.graph = await loadWorkflowGraph({ projectName: currentFrame.projectName, nodes, edges, variables, arguments: debugOptions?.arguments ?? [] }, currentFrame.filePath, debugOptions?.loadWorkflow ?? loadInvokedWorkflow);
     const resolvedNodes = resolveTargetBindings(nodes, session.targets);
     const invoke = async (nodeId: string, properties: Record<string, unknown>, values: Record<string, unknown>, depth: number) => {
       const loaded = session.graph?.resolve(currentFrame.filePath, nodeId);
@@ -237,7 +239,7 @@ async function executeWorkflowRecorded(
         { depth: depth + 1, parentRunId: trace.runId, invocationNodeId: nodeId, inheritedSecrets: trace.secrets });
       for (const secret of result.secrets) if (!trace.secrets.includes(secret)) trace.secrets.push(secret);
       publishFrame(nodeId);
-      if (result.status !== 'completed') return false;
+      if (result.status !== 'completed') { if (result.status === 'error') throw result.failure ?? Error('Called workflow failed.'); return false; }
       const outputs: Record<string, unknown> = Object.create(null);
       for (const arg of child.arguments.filter((a) => a.direction === 'Out')) {
         const destination = (properties.outArguments as Record<string, string> | undefined)?.[arg.name];
@@ -246,7 +248,7 @@ async function executeWorkflowRecorded(
       for (const [name, value] of Object.entries(outputs)) Object.defineProperty(values, name, { value, writable: true, configurable: true, enumerable: true });
       return true;
     };
-    let result = await executeWorkflowCore(resolvedNodes, edges, variables, onNodeStart, onNodeEnd, protectedLog, trace, debugOptions, live, session, frame.depth, publishFrame, invoke, (values) => { finalValues = values; });
+    let result = await executeWorkflowCore(resolvedNodes, edges, variables, onNodeStart, onNodeEnd, protectedLog, trace, debugOptions, live, session, frame.depth, publishFrame, invoke, (values) => { finalValues = values; }, error => { executionFailure = error; });
     if (_stopRequested) result = 'stopped';
     if (frame.depth === 0 && session.queues) {
       if (result === 'completed' && session.queues.activeCount) { result = 'error'; trace.error('A claimed transaction has no committed result. Add Set Transaction Status.'); }
@@ -258,7 +260,7 @@ async function executeWorkflowRecorded(
     }
     if (frame.depth === 0) live?.finish(result);
     await trace.finish(result);
-    return { status: result, values: finalValues, secrets: trace.secrets };
+    return { status: result, values: finalValues, secrets: trace.secrets, failure: executionFailure };
   } catch (error) {
     const status = _stopRequested ? 'stopped' : 'error';
     if (frame.depth === 0) try { await session.queues?.close(); } catch { protectedLog('Transaction cleanup could not be confirmed. Lease expiry will recover uncommitted work.', 'Warning'); }
@@ -266,7 +268,7 @@ async function executeWorkflowRecorded(
     if (frame.depth === 0) live?.finish(status);
     if (!_stopRequested) protectedLog(error instanceof Error ? error.message : String(error), 'Error');
     await trace.finish(status, _stopRequested ? undefined : error);
-    return { status, values: {}, secrets: trace.secrets };
+    return { status, values: {}, secrets: trace.secrets, failure: error instanceof Error ? error : Error(String(error)) };
   } finally { session.frames.pop(); }
 }
 
@@ -284,7 +286,8 @@ async function executeWorkflowCore(
   baseDepth: number,
   publishFrame: (nodeId: string | null) => void,
   invoke: (nodeId: string, properties: Record<string, unknown>, values: Record<string, unknown>, depth: number) => Promise<boolean>,
-  captureValues: (values: Record<string, unknown>) => void
+  captureValues: (values: Record<string, unknown>) => void,
+  captureError: (error: Error) => void
 ): Promise<'completed' | 'stopped' | 'error'> {
   const values: Record<string, unknown> = Object.fromEntries(variables.map((variable) => [variable.name, variable.defaultValue]));
   if (debugOptions?.initialValues) for (const name of Object.keys(values)) if (Object.prototype.hasOwnProperty.call(debugOptions.initialValues, name)) values[name] = debugOptions.initialValues[name];
@@ -294,17 +297,25 @@ async function executeWorkflowCore(
   let currentNodeId: string | null = null;
   live?.capture(values, null);
   let currentDepth = baseDepth;
+  let strictScope = 0;
+  let lastActivityFailure: Error | undefined;
+  const checkScopeStop = () => { if (_stopRequested) throw Error('Stopped by user'); };
   const onNodeStart = (id: string) => { currentNodeId = id; publishFrame(id); live?.capture(values, id); trace.start(id, values); notifyStart(id); };
   const onNodeEnd = (id: string) => { trace.runtime(values); live?.capture(values, id); trace.end(id, _stopRequested); notifyEnd(id); };
   const onLog: LogFn = (text, level) => { if (level === 'Error' && !_stopRequested) trace.error(text); notifyLog(_stopRequested && level === 'Error' ? 'Stopped by user' : text, _stopRequested && level === 'Error' ? 'Warning' : level); };
   const runWithValues = async (activityId: string, properties: Record<string, unknown>) => {
+    lastActivityFailure = undefined;
     const inputs = resolveProperties(properties, values);
     if (activityId === 'log-message') inputs.message = resolveLogMessage(properties.message, values);
     protectDerivedValues(properties, inputs, values, trace.secrets, v => { if (!trace.secrets.includes(v)) trace.secrets.push(v); });
     trace.inputs(inputs);
     let success = false;
     try { success = activityId === 'invoke-workflow' ? await invoke(currentNodeId!, properties, values, currentDepth) : await runWithValuesCore(activityId, properties); }
-    catch (error) { onLog(error instanceof Error ? error.message : String(error), 'Error'); }
+    catch (error) {
+      const failure = error instanceof Error ? error : Error(String(error)); lastActivityFailure = failure; captureError(failure);
+      onLog(failure.message, 'Error');
+      if (strictScope) { trace.outputs(values); await trace.captureFailure(); throw failure; }
+    }
     live?.capture(values, currentNodeId, 'running', true);
     trace.outputs(values);
     if (!success && !_stopRequested) { trace.error('Activity failed. See error details in Output.'); await trace.captureFailure(); }
@@ -312,6 +323,18 @@ async function executeWorkflowCore(
   };
   const runWithValuesCore = async (activityId: string, properties: Record<string, unknown>) => {
     session.queues?.assertHealthy();
+    if (activityId === 'business-rule-exception') throw new BusinessRuleException(String(resolveScopeValue(properties.message ?? 'Business rule was not satisfied.', values)));
+    if (activityId === 'transaction-scope') {
+      const node = nodes.find(n => n.id === currentNodeId)!;
+      const scopeDepth = currentDepth - baseDepth;
+      await executeTransactionScope(node.id, properties, values, session.queues, async () => {
+        strictScope++;
+        try { await scopeSequence(node.data.childIds ?? [], scopeDepth + 1); }
+        finally { strictScope--; publishFrame(node.id); currentNodeId = node.id; currentDepth = scopeDepth + baseDepth; }
+      }, properties.workflowFile ? async () => { publishFrame(node.id); currentNodeId = node.id; if (!await invoke(node.id, properties, values, currentDepth)) checkScopeStop(); } : undefined, checkScopeStop, () => trace.secrets);
+      if (session.queues) trace.transactions(session.queues.events);
+      live?.capture(values, node.id); return true;
+    }
     if (queueActivities.includes(activityId)) {
       const outputs = await executeQueueActivity(activityId, properties, values, session.queues, trace.secrets);
       if (_stopRequested) return false;
@@ -364,6 +387,7 @@ async function executeWorkflowCore(
     }
     const result = await runActivity(activityId, resolvedProperties, onLog);
     session.queues?.assertHealthy();
+    if (!result.success) throw Error(result.log || `Activity failed: ${activityId}`);
     if (result.outputs) Object.assign(values, result.outputs);
     return result.success;
   };
@@ -423,12 +447,63 @@ async function executeWorkflowCore(
 
   onLog('▶  Workflow started', 'Info');
 
+  let scopeSteps = 0;
+  async function scopeSequence(ids: string[], depth: number): Promise<'normal' | 'break' | 'continue'> {
+    if (depth > 64) throw Error('Transaction Scope nesting limit exceeded.');
+    for (const id of ids) {
+      checkScopeStop(); session.queues?.assertHealthy();
+      if (++scopeSteps > 10000) throw Error('Transaction Scope activity limit exceeded.');
+      const node = nodes.find(n => n.id === id); if (!node) throw Error('Transaction Scope has a missing child activity.');
+      const d = node.data, p = d.properties;
+      onNodeStart(id); await maybeBreak(id, depth);
+      try {
+        checkScopeStop(); onLog(`  → ${d.label}`, 'Info');
+        if (d.activityId === 'break' || d.activityId === 'continue') return d.activityId;
+        if (d.activityId === 'if') {
+          const branch = (d.branches ?? []).find(b => b.kind === 'else' || evaluateCondition(b.condition, values));
+          if (branch) { const flow = await scopeSequence(branch.childIds, depth + 1); if (flow !== 'normal') return flow; }
+        } else if (d.activityId === 'for-each') {
+          const name = d.loopVariable?.name, items = resolveCollection(p.collection, values);
+          if (!name || !items) throw Error('For Each requires a collection and loop variable.');
+          const had = Object.prototype.hasOwnProperty.call(values, name), old = values[name];
+          try { for (const item of items) { if (++scopeSteps > 10000) throw Error('Transaction Scope activity limit exceeded.'); values[name] = item; const flow = await scopeSequence(d.childIds ?? [], depth + 1); if (flow === 'break') break; } }
+          finally { if (had) values[name] = old; else delete values[name]; }
+        } else if (d.activityId === 'retry-scope') {
+          const count = Number(p.maxRetries ?? 3), delay = Number(p.retryDelay ?? 1000);
+          if (!Number.isSafeInteger(count) || count < 0 || count > 1000 || !Number.isFinite(delay) || delay < 0 || delay > 120000) throw Error('Invalid retry count or delay.');
+          for (let attempt = 0; ; attempt++) {
+            try { const flow = await scopeSequence(d.childIds ?? [], depth + 1); if (flow !== 'normal') return flow; break; }
+            catch (error) { checkScopeStop(); if (error instanceof BusinessRuleException || error instanceof TransactionScopeFailure || attempt >= count) throw error; if (delay) await sleep(delay); }
+          }
+        } else if (d.activityId === 'try-catch') {
+          const branches = d.branches ?? [], body = branches.find(b => b.kind === 'try'), final = branches.find(b => b.kind === 'finally');
+          if (!body) throw Error('Try Catch has no TRY branch.');
+          let flow: 'normal' | 'break' | 'continue' = 'normal';
+          try { try { flow = await scopeSequence(body.childIds, depth + 1); }
+            catch (error) { checkScopeStop(); const handler = branches.find(b => b.kind === 'catch'); if (!handler) throw error; const name = String(p.exception ?? 'exception'); values[name] = { type: error instanceof BusinessRuleException ? 'Business' : 'Application', message: error instanceof Error ? error.message : String(error) }; flow = await scopeSequence(handler.childIds, depth + 1); }
+          } finally { if (final && !_stopRequested) { const result = await scopeSequence(final.childIds, depth + 1); if (result !== 'normal') flow = result; } }
+          if (flow !== 'normal') return flow;
+        } else {
+          if (d.activityId !== 'sequence' && !await runWithValues(d.activityId, p)) { checkScopeStop(); throw Error(`Activity failed: ${d.label}`); }
+          if (d.isContainer && d.activityId !== 'transaction-scope') { const flow = await scopeSequence(d.childIds ?? [], depth + 1); if (flow !== 'normal') return flow; }
+        }
+      } finally { onNodeEnd(id); }
+    }
+    return 'normal';
+  }
+
   for (const node of topLevel) {
     if (_stopRequested) { onLog('Stopped by user', 'Warning'); return 'stopped'; }
     onNodeStart(node.id);
     await maybeBreak(node.id, 0);
     if (_stopRequested) { onNodeEnd(node.id); onLog('Stopped by user', 'Warning'); return 'stopped'; }
     onLog(`→ ${node.data.label}`, 'Info');
+
+    if (node.data.activityId === 'transaction-scope') {
+      const ok = await runWithValues(node.data.activityId, node.data.properties); onNodeEnd(node.id);
+      if (!ok) return _stopRequested ? 'stopped' : 'error';
+      continue;
+    }
 
     if (node.data.isContainer) {
       if (node.data.activityId === 'retry-scope') {
@@ -452,7 +527,7 @@ async function executeWorkflowCore(
             onLog(`  → ${child.data.label}`, 'Info');
             const childOk = await runWithValues(child.data.activityId, child.data.properties);
             onNodeEnd(child.id);
-            if (!childOk) { attemptSucceeded = false; break; }
+            if (!childOk) { if (lastActivityFailure instanceof BusinessRuleException || lastActivityFailure instanceof TransactionScopeFailure) { onNodeEnd(node.id); return 'error'; } attemptSucceeded = false; break; }
           }
           if (attemptSucceeded) { succeeded = true; break; }
         }

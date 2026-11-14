@@ -2,7 +2,7 @@ import { cloneArgument, resolveArgumentInput, validArgumentName } from './invoke
 import { containsProtectedValue, validAssetName } from './assets';
 export interface TransactionItem { id: string; queueName: string; environmentId: string; reference: string; content: Record<string, unknown>; status: string; attempt: number; retryCount: number; readyAt: number; leaseUntil?: number; errorType?: string; reason?: string }
 export interface QueueDefinition { name: string; enabled: boolean; maxRetries: number; retryDelaySeconds: number; leaseSeconds: number; revision: number; counts: Record<string, number> }
-export interface TransactionEvent { itemId?: string; queueName: string; reference?: string; attempt?: number; status: string; errorType?: string; reason?: string; at: number }
+export interface TransactionEvent { itemId?: string; queueName: string; reference?: string; attempt?: number; status: string; scopeId?: string; phase?: string; errorType?: string; reason?: string; at: number }
 export interface QueueResponse { item: TransactionItem | null; leaseToken?: string; leaseSeconds?: number; released?: TransactionItem[]; duplicate?: boolean }
 export type QueueTransport = (payload: Record<string, unknown>, cleanup?: boolean) => Promise<QueueResponse>;
 export class QueueTransportError extends Error { constructor(message: string, public uncertain = false) { super(message); } }
@@ -20,9 +20,20 @@ export class QueueRunSession {
   private failure: Error | undefined;
   private closed = false;
   private used = false;
+  private scopeItem: string | undefined;
   constructor(private transport: QueueTransport) {}
   get activeCount() { return this.claims.size; }
   assertHealthy() { if (this.failure) throw this.failure; }
+  beginScope(item: TransactionItem) {
+    this.assertHealthy(); const claim = this.claims.get(item?.id);
+    if (this.closed || this.scopeItem || !claim || claim.item.attempt !== item.attempt || claim.item.queueName !== item.queueName) throw Error('Transaction Scope requires an uncommitted claim from this run; nested scopes are not supported.');
+    this.scopeItem = item.id; return structuredClone(claim.item);
+  }
+  endScope(id: string) { if (this.scopeItem === id) this.scopeItem = undefined; }
+  scopeEvent(item: TransactionItem, scopeId: string, phase: string, errorType?: string, reason?: string) {
+    this.events.push({ itemId: item.id, queueName: item.queueName, reference: item.reference, attempt: item.attempt, status: 'scope', scopeId, phase, errorType, reason, at: Date.now() });
+    if (this.events.length > 200) this.events.shift();
+  }
   private record(item: TransactionItem | null, queueName: string, status?: string) {
     this.events.push({ itemId: item?.id, queueName, reference: item?.reference, attempt: item?.attempt, status: status ?? item?.status ?? 'empty', errorType: item?.errorType, reason: item?.reason, at: Date.now() });
     if (this.events.length > 200) this.events.shift();
@@ -52,6 +63,7 @@ export class QueueRunSession {
     this.record(result.item, queueName, result.duplicate ? 'duplicate' : undefined); return result.item;
   }
   async claim(queueName: string) {
+    if (this.scopeItem) throw Error('Claim the next transaction after the current Transaction Scope ends.');
     this.assertHealthy(); if (this.closed || this.claims.size >= 20) throw Error('Finish the current transactions before claiming more work.');
     const result = await this.send({ operation: 'claim', queueName }); this.record(result.item, queueName);
     if (result.item) {
@@ -66,7 +78,8 @@ export class QueueRunSession {
     }
     return result.item;
   }
-  async complete(item: TransactionItem, status: string, errorType: string, reason: string) {
+  async complete(item: TransactionItem, status: string, errorType: string, reason: string, managed = false) {
+    if (this.scopeItem === item?.id && !managed) throw Error('Transaction Scope manages this item. Remove Set Transaction Status from its body.');
     this.assertHealthy(); const claim = this.claims.get(item?.id);
     if (this.closed || !claim || claim.item.queueName !== item.queueName || claim.item.attempt !== item.attempt) throw Error('This transaction was not claimed by the current run.');
     clearInterval(claim.timer);

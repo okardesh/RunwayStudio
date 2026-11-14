@@ -1,5 +1,6 @@
 /** Real native handlers plus the control activities implemented by the package runner. */
 export const robotActivities = new Set([
+  'transaction-scope', 'business-rule-exception',
   'use-app-browser','open-browser','close-browser','navigate-to','navigate-back','navigate-forward','refresh-page',
   'open-new-tab','close-tab','switch-tab','switch-frame','switch-default-content','accept-alert','dismiss-alert','maximize-window','execute-javascript',
   'click','double-click','right-click','hover','type-into','clear-text','send-hotkey','select-option','check-checkbox','drag-drop','scroll-to','scroll-page','upload-file','focus-element','take-screenshot',

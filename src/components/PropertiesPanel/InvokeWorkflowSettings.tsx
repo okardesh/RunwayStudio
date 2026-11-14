@@ -41,7 +41,8 @@ export function InvokeWorkflowSettings({ nodeId, data }: { nodeId: string; data:
       setLoaded({ key: JSON.stringify([nodeId, filePath, result.path]), workflow: { path: result.path, definition } });
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not choose a workflow.'); } finally { setLoading(false); }
   };
-  return <section className="pgrid-section invoke-settings" aria-label="Invoked workflow arguments"><div className="pgrid-section__hdr">Invoke Workflow · Arguments</div><div className="invoke-settings__body">
+  return <section className="pgrid-section invoke-settings" aria-label="Invoked workflow arguments"><div className="pgrid-section__hdr">{data.activityId === 'transaction-scope' ? 'Recovery Workflow · Arguments' : 'Invoke Workflow · Arguments'}</div><div className="invoke-settings__body">
+    {data.activityId === 'transaction-scope' && <p>Optional: runs after an Application failure is committed. Map {`{{transactionError}}`} and your transaction to recovery In arguments. Business errors and Stop skip recovery. Recovery never repeats the processing body.</p>}
     <div className="invoke-settings__actions"><button disabled={loading} onClick={() => void browse()}>Browse workflow…</button><button disabled={loading || !requested.trim()} onClick={() => void refresh()}>{loading ? 'Reading…' : 'Import / refresh arguments'}</button></div>
     {error && <p className="invoke-settings__error" role="alert">{error}</p>}
     {!definition && <p>Choose a .rpa.json file, then import its In/Out arguments. Files are read without replacing or saving the current canvas.</p>}

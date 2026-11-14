@@ -291,7 +291,7 @@ function PropertiesContent() {
       })}
 
       <BreakpointSettings nodeId={selectedNode.id} data={selectedNode.data} />
-      {selectedNode.data.activityId === 'invoke-workflow' && <InvokeWorkflowSettings key={selectedNode.id} nodeId={selectedNode.id} data={selectedNode.data} />}
+      {['invoke-workflow', 'transaction-scope'].includes(selectedNode.data.activityId) && <InvokeWorkflowSettings key={selectedNode.id} nodeId={selectedNode.id} data={selectedNode.data} />}
 
       {recorderFor !== null && createPortal(
         ancestorTargetType === 'desktop' ? (

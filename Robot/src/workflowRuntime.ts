@@ -1,4 +1,5 @@
-import { argumentValue, cloneArgument, initializeArguments, parseWorkflowDefinition, resolveArgumentInput, validArgumentName, validateInvocation, type WorkflowDefinition } from '../../src/shared/invokedWorkflows';
+import { argumentValue, cloneArgument, hasWorkflowCall, initializeArguments, parseWorkflowDefinition, resolveArgumentInput, validArgumentName, validateInvocation, type WorkflowDefinition } from '../../src/shared/invokedWorkflows';
+import { BusinessRuleException, TransactionScopeFailure, executeTransactionScope, resolveScopeValue } from '../../src/shared/transactionScope';
 import { PACKAGE_PREFIX, validatePortablePackage, validateRobotWorkflow, type PortableWorkflowPackage } from '../../src/shared/portableWorkflowPackage';
 import { resolveTargetBindings } from '../../src/shared/uiTargets';
 import { resolveLogMessage } from '../../src/shared/logMessageExpression';
@@ -24,11 +25,11 @@ export async function executeRobotWorkflow(input: unknown, inputs: Record<string
   if ('portablePackage' in input) { const checked = await validatePortablePackage(input); manifest = checked.manifest; loader = checked.loader; definition = checked.definition; }
   else {
     definition = legacyDefinition(input); validateRobotWorkflow(definition); resolveTargetBindings(definition.nodes, definition.uiTargets ?? []);
-    if (definition.nodes.some((n) => n.data.activityId === 'invoke-workflow')) throw Error('Invoke Workflow requires a portable package. Republish from Studio.');
+    if (definition.nodes.some(hasWorkflowCall)) throw Error('Invoke Workflow and recovery workflows require a portable package. Republish from Studio.');
   }
   const checkStop = () => { if (options.signal?.aborted) throw new RobotJobStoppedError(); };
   const definitions = manifest ? manifest.workflows.map(w => w.definition) : [definition];
-  if (!options.queueSession && definitions.some(d => d.nodes.some(n => queueActivities.includes(n.data.activityId)))) throw Error('This workflow requires a Maestro queue context. Run it from Robot Jobs.');
+  if (!options.queueSession && definitions.some(d => d.nodes.some(n => queueActivities.includes(n.data.activityId) || n.data.activityId === 'transaction-scope'))) throw Error('This workflow requires a Maestro queue context. Run it from Robot Jobs.');
   if (!options.resolveAsset && definitions.some(d => d.nodes.some(n => ['get-asset', 'get-credential'].includes(n.data.activityId)))) throw Error('This workflow requires a Maestro asset context. Select an environment and start it from Robot Jobs.');
   checkStop();
   const secrets = new Set<string>(), events: Array<{ level: 'info' | 'error'; message: string }> = [];
@@ -72,6 +73,17 @@ export async function executeRobotWorkflow(input: unknown, inputs: Record<string
       if (++steps > 10000) throw Error('Robot activity execution limit reached (10,000).');
       const d = node.data, p = d.properties, id = d.activityId;
       collect(p, true); emit('info', `Starting ${name} / ${d.label}`);
+      if (id === 'business-rule-exception') {
+        const message = String(resolveScopeValue(p.message ?? 'Business rule was not satisfied.', values));
+        protectDerivedValues(p, { message }, values, [...secrets], value => { secrets.add(value); options.onSecret?.(value); });
+        throw new BusinessRuleException(message);
+      }
+      if (id === 'transaction-scope') {
+        await executeTransactionScope(node.id, p, values, options.queueSession, async () => {
+          if (await sequence(children(d.childIds ?? [])) !== 'normal') throw Error('Loop control cannot escape a Transaction Scope.');
+        }, p.workflowFile ? async () => { await runNode({ ...node, data: { ...d, activityId: 'invoke-workflow', isContainer: false } }); } : undefined, checkStop, () => [...secrets]);
+        emit('info', 'Transaction Scope finalized.'); return 'normal';
+      }
       if (queueActivities.includes(id)) {
         const outputs = await executeQueueActivity(id, p, values, options.queueSession, [...secrets]);
         checkStop(); Object.assign(values, outputs); emit('info', 'Central queue operation completed.'); return 'normal';
@@ -114,7 +126,7 @@ export async function executeRobotWorkflow(input: unknown, inputs: Record<string
       if (id === 'retry-scope') {
         const retries = Number(resolveArgumentInput(p.maxRetries ?? 3, values).value), delay = Number(resolveArgumentInput(p.retryDelay ?? 1000, values).value);
         if (!Number.isSafeInteger(retries) || retries < 0 || retries > 1000 || !Number.isFinite(delay) || delay < 0 || delay > 120000) throw Error('Invalid retry count or delay.');
-        for (let attempt = 0; ; attempt++) { try { return await sequence(children(d.childIds ?? [])); } catch (error) { checkStop(); if (attempt >= retries) throw error; emit('info', `Retry ${attempt + 1} in ${name}`); if (delay) await wait(delay); } }
+        for (let attempt = 0; ; attempt++) { try { return await sequence(children(d.childIds ?? [])); } catch (error) { checkStop(); if (error instanceof BusinessRuleException || error instanceof TransactionScopeFailure || attempt >= retries) throw error; emit('info', `Retry ${attempt + 1} in ${name}`); if (delay) await wait(delay); } }
       }
       if (id === 'try-catch') {
         const branches = d.branches ?? [], tried = branches.find((b) => b.kind === 'try')!, final = branches.find((b) => b.kind === 'finally');

@@ -148,6 +148,18 @@ async function maestroTest(source, packages, robotPort, native, control) {
       packages = [...packages, { workflowId: 'queue', name: 'Queue HTTP ' + mode, version, definition: bundle }];
     }
   }
+  if (process.argv.includes('--transaction-scope')) {
+    const engine = require(path.join(out, 'engine.cjs'));
+    for (const [version, mode] of [['9.0.0', 'success'], ['10.0.0', 'Application'], ['11.0.0', 'Business'], ['12.0.0', 'recovery-failure'], ['13.0.0', 'stop']]) {
+      const processing = mode === 'success' ? node('process', 'log-message', { message: '{{transaction.content.amount}}' }) : mode === 'stop' ? node('hold', 'delay', { duration: 5 }) : node('process', mode === 'Business' ? 'business-rule-exception' : 'throw', { message: 'Expected ' + mode });
+      processing.data.parentId = 'scope';
+      const definition = def('Scope HTTP ' + mode, [node('add', 'add-queue-item', { queueName: 'ScopeInvoices', reference: '{{reference}}', content: '{"amount":42}' }), node('get', 'get-transaction-item', { queueName: 'ScopeInvoices', output: 'transaction' }), node('scope', 'transaction-scope', { transaction: '{{transaction}}', failureBehavior: 'Continue', workflowFile: 'recovery.rpa.json', inArguments: { error: '{{transactionError}}' }, outArguments: { ready: 'ready' } }, { isContainer: true, childIds: ['process'] }), processing], [arg('reference')]);
+      if (mode === 'stop') definition.nodes[2].data.childIds = ['hold'];
+      const recovery = def('Scope recovery', [node('recovery-step', mode === 'recovery-failure' ? 'throw' : 'log-message', { message: 'RECOVERY {{error.type}}' }), node('return', 'assign', { to: 'ready', value: 'recovered' })], [arg('error', 'In', 'Object'), arg('ready', 'Out', 'String', false)]);
+      const bundle = await engine.buildPortablePackage(definition, path.join(out, 'scope.rpa.json'), [], version, async () => ({ path: path.join(out, 'recovery.rpa.json'), definition: recovery }));
+      packages = [...packages, { workflowId: 'scope', name: 'Scope HTTP ' + mode, version, definition: bundle }];
+    }
+  }
   const config = path.join(out, 'maestro-config.json'); fs.writeFileSync(config, JSON.stringify({ packages, robotUrl: 'http://127.0.0.1:' + robotPort + '/api/robot/jobs' }));
   const start = async () => {
     const child = spawn(python, [path.join(__dirname, 'maestroFixture.py'), source, config], { windowsHide: true, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' }, stdio: ['ignore', 'pipe', 'pipe'] }); let errors = '';
@@ -163,6 +175,7 @@ async function maestroTest(source, packages, robotPort, native, control) {
     assert.deepEqual(await global.robotIpc.get('robot:connect')(null, service.url), { ok: true });
     if (process.argv.includes('--assets')) await assetHttpTest(service.url, packages.find(p => p.workflowId === 'assets').definition);
     if (process.argv.includes('--queues')) await queueHttpTest(service.url, packages.filter(p => p.workflowId === 'queue'), control);
+    if (process.argv.includes('--transaction-scope')) await scopeHttpTest(service.url, packages.filter(p => p.workflowId === 'scope'), control);
     const r = { requestId: crypto.randomUUID(), robotId: 'r1', workflowId: 'published-1.0.0', version: '1.0.0', packageId: packages[0].definition.portablePackage.id, inputs: { greeting: 'Maestro durable result', count: 8 } };
     const created = await (await post(service.url + '/api/v1/robot-jobs', r)).json(); assert.ok(created.jobId);
     await waitFor(async () => (await (await fetch(service.url + '/api/v1/robot-jobs/' + created.jobId, { headers: { 'X-API-Key': 'studio-fixture-key' } })).json()).job?.status === 'success');
@@ -235,5 +248,25 @@ async function queueHttpTest(url, packages, control) {
   await configure(1, false);
   const pkg = packages[0]; assert.equal((await request('/api/v1/robot-jobs', { requestId: crypto.randomUUID(), robotId: 'r1', workflowId: 'queue-' + pkg.version, version: pkg.version, packageId: pkg.definition.portablePackage.id, inputs: { reference: 'disabled' } })).status, 400);
   console.log('PASS Production Robot → Maestro queue grants, success, Application retry, final Business failure, controlled stop, persisted transaction history and disabled queue preflight');
+}
+async function scopeHttpTest(url, packages, control) {
+  const request = async (route, body) => { const r = await fetch(url + route, { method: body === undefined ? 'GET' : 'POST', headers: { 'X-API-Key': 'studio-fixture-key', 'Content-Type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }); const data = await r.json(); assert.ok(r.ok, JSON.stringify(data)); return data; };
+  await request('/api/v1/studio-queues/configure', { profileId: 'default', name: 'ScopeInvoices', maxRetries: 1, retryDelaySeconds: 3600, leaseSeconds: 30 });
+  const catalog = await request('/api/v1/robot-jobs/catalog'); assert.ok(catalog.packages.find(p => p.version === '9.0.0').requiredQueues[0].operations.includes('complete'));
+  for (const pkg of packages) {
+    const reference = 'SCOPE-' + pkg.version;
+    const created = await request('/api/v1/robot-jobs', { requestId: crypto.randomUUID(), robotId: 'r1', workflowId: 'scope-' + pkg.version, version: pkg.version, packageId: pkg.definition.portablePackage.id, inputs: { reference } });
+    if (pkg.version === '13.0.0') { await waitFor(control.held); await request('/api/v1/robot-jobs/' + created.jobId + '/stop', {}); control.release(); }
+    let view; await waitFor(async () => { view = (await request('/api/v1/robot-jobs/' + created.jobId)).job; return ['success', 'failed', 'stopped'].includes(view?.status); });
+    assert.equal(view.status, pkg.version === '13.0.0' ? 'stopped' : pkg.version === '12.0.0' ? 'failed' : 'success', view.error);
+    const item = (await request('/api/v1/studio-queues?profileId=default&queueName=ScopeInvoices')).items.find(v => v.reference === reference);
+    assert.equal(item.status, pkg.version === '9.0.0' ? 'successful' : pkg.version === '11.0.0' ? 'failed' : 'retry');
+    if (pkg.version === '10.0.0') assert.ok(view.transactions.some(v => v.phase === 'recovery-completed'));
+    if (pkg.version === '12.0.0') assert.ok(view.transactions.some(v => v.phase === 'recovery-failed'));
+    if (['9.0.0', '11.0.0', '13.0.0'].includes(pkg.version)) assert.ok(!view.transactions.some(v => v.phase === 'recovery-started'));
+    assert.ok(!JSON.stringify(view).includes('leaseToken'));
+    await waitFor(async () => !(await (await fetch('http://127.0.0.1:' + process.env.RUNWAY_ROBOT_PORT + '/health')).json()).activeJob);
+  }
+  console.log('PASS Robot Jobs → Maestro Transaction Scope auto-commit grants, Business final failure, queue retry, packaged recovery and recovery failure/Stop history');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

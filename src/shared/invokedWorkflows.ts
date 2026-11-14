@@ -8,6 +8,7 @@ export interface LoadedWorkflow { path: string; definition: WorkflowDefinition }
 export type WorkflowLoader = (requestedPath: string, callerPath: string | null) => Promise<LoadedWorkflow>;
 export const workflowPathKey = (path: string) => path.replace(/\\/g, '/').toLowerCase();
 export const validArgumentName = (name: string) => /^[A-Za-z_]\w*$/.test(name) && !['__proto__', 'constructor', 'prototype'].includes(name);
+export const hasWorkflowCall = (node: Node<WorkflowNodeData>) => node.data.activityId === 'invoke-workflow' || node.data.activityId === 'transaction-scope' && !!node.data.properties.workflowFile;
 export function supportedArgumentType(type: string, depth = 0): boolean {
   if (depth > 10 || type.length > 200) return false;
   if (['String', 'Boolean', 'DateTime', 'Object', 'Array', 'List', 'Byte', 'SByte', 'Int16', 'Int32', 'Int64', 'UInt16', 'UInt32', 'UInt64', 'Single', 'Double', 'Decimal'].includes(type)) return true;
@@ -131,7 +132,7 @@ export async function loadWorkflowGraph(root: WorkflowDefinition, rootPath: stri
   const calls = new Map<string, LoadedWorkflow>(), files = new Map<string, LoadedWorkflow>(); let count = 0;
   const callKey = (caller: string | null, id: string) => JSON.stringify([caller ? workflowPathKey(caller) : '<root>', id]);
   const visit = async (definition: WorkflowDefinition, caller: string | null, chain: string[]) => {
-    for (const node of definition.nodes.filter((n) => n.data.activityId === 'invoke-workflow')) {
+    for (const node of definition.nodes.filter(hasWorkflowCall)) {
       const requested = node.data.properties.workflowFile;
       if (typeof requested !== 'string' || !requested.trim() || requested.includes('{{')) throw Error(`Invoke "${node.data.label}": choose a static .rpa.json path.`);
       if (++count > 100 || chain.length >= 16) throw Error('Workflow dependency limit reached (100 calls / 16 levels).');

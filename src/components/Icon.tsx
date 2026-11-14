@@ -42,7 +42,7 @@ export function Icon({ name, size = 18, style }: { name: IconName; size?: number
 
 export function ActivityGlyph({ activityId }: { activityId: string }) {
   const id = activityId.toLowerCase();
-  const name: IconName = /throw|error/.test(id) ? 'alert' : /try|catch|assert|verify/.test(id) ? 'shield'
+  const name: IconName = /throw|error|exception/.test(id) ? 'alert' : /try|catch|assert|verify|transaction-scope/.test(id) ? 'shield'
     : /browser|navigate|url/.test(id) ? 'browser' : /click|hover|mouse|element/.test(id) ? 'cursor'
     : /type|text|write-line/.test(id) ? 'text' : /delay|wait/.test(id) ? 'clock' : /log/.test(id) ? 'terminal'
     : /if|switch|decision/.test(id) ? 'branch' : /loop|each|while|retry/.test(id) ? 'repeat'

@@ -4,6 +4,7 @@ import { useWorkflowAnalyzerStore } from '../store/workflowAnalyzerStore';
 import { useUiStore } from '../store/uiStore';
 import { analyzeInvocations } from './analyzeInvocations';
 import { useAssetsStore } from '../store/assetsStore';
+import { hasWorkflowCall } from '../shared/invokedWorkflows';
 
 export function analyzeCurrentWorkflow() {
   const workflow = useWorkflowStore.getState();
@@ -11,7 +12,7 @@ export function analyzeCurrentWorkflow() {
   const source = { ...workflow, targets: useUiTargetStore.getState().targets, assets: assets.connection ? { profileId: assets.selectedProfileId, catalog: assets.catalog } : undefined };
   let report = useWorkflowAnalyzerStore.getState().analyze(source);
   useUiStore.setState({ activeBottomPanelTab: 'errors', analyzerNodeId: null });
-  if (workflow.nodes.some((n) => n.data.activityId === 'invoke-workflow')) {
+  if (workflow.nodes.some(hasWorkflowCall)) {
     report = { ...report, dependencyState: 'checking' };
     useWorkflowAnalyzerStore.setState({ report });
     void analyzeInvocations(source).then((extra) => {

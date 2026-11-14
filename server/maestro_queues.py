@@ -83,7 +83,7 @@ def requirements(definition):
     for file in definition.get('portablePackage', {}).get('workflows', []):
         for node in file.get('definition', {}).get('nodes', []):
             data = node.get('data', {}); activity = data.get('activityId')
-            if activity == 'set-transaction-status':
+            if activity in ('set-transaction-status', 'transaction-scope'):
                 complete = True
             if activity not in ('add-queue-item', 'get-transaction-item'):
                 continue

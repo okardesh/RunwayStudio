@@ -21,6 +21,20 @@ export function SequenceCanvas() {
 
 const displayProperties = (node: Node<WorkflowNodeData>) => resolveTargetBindings([node], useUiTargetStore.getState().targets, false)[0].data.properties;
 
+function inScopeTree(node: Node<WorkflowNodeData>, nodes: Node<WorkflowNodeData>[]) {
+  let current: Node<WorkflowNodeData> | undefined = node; const seen = new Set<string>();
+  while (current && !seen.has(current.id)) { if (current.data.activityId === 'transaction-scope') return true; seen.add(current.id); current = nodes.find(n => n.id === current!.data.parentId); }
+  return false;
+}
+function NestedScopeBlock({ node }: { node: Node<WorkflowNodeData> }) {
+  const { selectedNodeId, executingNodeId, setSelectedNode, deleteNode } = useWorkflowStore();
+  const props = { node, isSelected: node.id === selectedNodeId, isExecuting: node.id === executingNodeId, onSelect: () => setSelectedNode(node.id), onDelete: () => deleteNode(node.id) };
+  if (node.data.activityId === 'if') return <IfCard {...props} />;
+  if (node.data.activityId === 'for-each') return <ForEachCard {...props} />;
+  if (node.data.activityId === 'try-catch') return <TryCatchCard {...props} />;
+  return <ContainerCard {...props} />;
+}
+
 // ── Container card (Use Application/Browser) ─────────────────────────────────
 
 function ContainerCard({
@@ -95,7 +109,7 @@ function ContainerCard({
         </div>
       </div>
 
-      {!isCollapsed && <>{isTargetContainer && <div className="container-card__indicate">
+      {!isCollapsed && <>{node.data.activityId === 'transaction-scope' && <div className="container-card__indicate" style={{ display: 'block', padding: 12 }}><strong>Automatic transaction result</strong><p>{String(node.data.properties.transaction ?? '{{transaction}}')} · {String(node.data.properties.failureBehavior ?? 'Continue')} after failure</p><small>Business: final failure · Application: queue retry policy{node.data.properties.workflowFile ? ` · Recovery: ${String(node.data.properties.workflowFile)}` : ' · Optional recovery in Properties'}</small></div>}{isTargetContainer && <div className="container-card__indicate">
         {hasTarget ? (
           <span
             className="container-card__target-url"
@@ -160,6 +174,7 @@ function ContainerCard({
           )}
 
           {children.map((child, idx) => {
+            if (child.data.isContainer && inScopeTree(child, nodes)) return <div key={child.id} className="seq-item"><NestedScopeBlock node={child} /><InsertZone index={idx + 1} active={childDropIdx === idx + 1} visible={childDragActive} onDragOver={() => setChildDropIdx(idx + 1)} onDrop={handleChildDrop} /></div>;
             const isDragging = childDraggingIdx === idx;
             const childIsExecuting = child.id === executingNodeId;
             const childIsSelected  = child.id === selectedNodeId;
@@ -251,7 +266,7 @@ function ForEachCard({ node, isSelected, isExecuting, onSelect, onDelete }: {
             if (activityId) addChildNodeAt(node.id, activityId, children.length);
           }}
         >
-          {children.length === 0 ? <div className="for-each-card__empty">Drop activity here</div> : children.map((child) => (
+          {children.length === 0 ? <div className="for-each-card__empty">Drop activity here</div> : children.map((child) => child.data.isContainer && inScopeTree(child, nodes) ? <NestedScopeBlock key={child.id} node={child} /> : (
             <div key={child.id} className={`seq-card${selectedNodeId === child.id ? ' seq-card--selected' : ''}`} style={{ borderLeftColor: child.data.color ?? '#6A1B9A' }} onClick={(event) => { event.stopPropagation(); setSelectedNode(child.id); }}>
               <div className="seq-card__icon" style={{ background: child.data.color ?? '#0078D4' }}><ActivityGlyph activityId={child.data.activityId} /></div>
               <div className="seq-card__body"><span className="seq-card__name">{child.data.label}</span></div>
@@ -320,6 +335,7 @@ function IfCard({ node, isSelected, isExecuting, onSelect, onDelete }: {
               {isInvalid && <div className="if-branch__validation">Condition required when using multiple ELSE branches.</div>}
               <div className="if-branch__body">
                 {children.length === 0 ? <div className="if-branch__empty">Drop activity here</div> : children.map((child) => {
+                  if (child.data.isContainer && inScopeTree(child, nodes)) return <NestedScopeBlock key={child.id} node={child} />;
                   const childIsCollapsed = !!child.data.collapsed;
                   return <div key={child.id} className={`seq-card if-branch__activity${selectedNodeId === child.id ? ' seq-card--selected' : ''}${childIsCollapsed ? ' seq-card--collapsed' : ''}`} style={{ borderLeftColor: child.data.color ?? '#0078D4' }} onClick={(event) => { event.stopPropagation(); setSelectedNode(child.id); }} draggable onDragStart={(event) => {
                     event.dataTransfer.setData('application/rpa-if-child-id', child.id);
@@ -409,7 +425,7 @@ function TryCatchCard({ node, isSelected, isExecuting, onSelect, onDelete }: {
                   >×</button>}
                 </div>
                 <div className="try-catch-branch__body">
-                  {children.length === 0 ? <div className="try-catch-branch__empty">{branch.kind === 'finally' ? 'Optional - drop activity here' : 'Drop activity here'}</div> : children.map((child) => (
+                  {children.length === 0 ? <div className="try-catch-branch__empty">{branch.kind === 'finally' ? 'Optional - drop activity here' : 'Drop activity here'}</div> : children.map((child) => child.data.isContainer && inScopeTree(child, nodes) ? <NestedScopeBlock key={child.id} node={child} /> : (
                     <div key={child.id} className={`seq-card if-branch__activity${selectedNodeId === child.id ? ' seq-card--selected' : ''}`} style={{ borderLeftColor: child.data.color ?? '#0078D4' }} onClick={(event) => { event.stopPropagation(); setSelectedNode(child.id); }} draggable onDragStart={(event) => {
                       event.dataTransfer.setData('application/rpa-if-child-id', child.id);
                       event.dataTransfer.setData('application/rpa-if-branch-id', branch.id);

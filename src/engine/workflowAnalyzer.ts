@@ -2,7 +2,8 @@ import type { Edge, Node } from 'reactflow';
 import type { WorkflowArgument, WorkflowNodeData, WorkflowVariable } from '../types';
 import { getActivity } from '../activities/registry';
 import type { UiTarget } from '../shared/uiTargets';
-import { validateArguments, validArgumentName } from '../shared/invokedWorkflows';
+import { hasWorkflowCall, validateArguments, validArgumentName } from '../shared/invokedWorkflows';
+import { validateTransactionScope } from '../shared/transactionScope';
 import { queueActivities, validateQueueActivity } from '../shared/queues';
 import { assetRequirement, type AssetCatalog } from '../shared/assets';
 
@@ -13,7 +14,7 @@ export interface AnalysisReport { signature: string; projectName: string; analyz
 const identifier = /^[A-Za-z_]\w*$/;
 const blank = (value: unknown) => value === undefined || value === null || typeof value === 'string' && !value.trim();
 const variableName = (value: unknown) => String(value ?? '').trim().replace(/^\{\{\s*|\s*\}\}$/g, '');
-const outputField = (name: string) => ['output', 'to', 'usernameOutput', 'passwordOutput', 'hasItemOutput'].includes(name);
+const outputField = (name: string) => ['output', 'to', 'usernameOutput', 'passwordOutput', 'hasItemOutput', 'exceptionOutput', 'resultOutput'].includes(name);
 
 /** Includes semantic edits, excluding selection, folding, execution state and canvas layout. */
 export function analysisSignature(source: AnalysisSource) {
@@ -35,6 +36,7 @@ export function analyzeWorkflow(source: AnalysisSource): AnalysisReport {
       activity: node?.data.label || node?.data.activityId || 'Workflow', property, message, recommendation });
   };
   const nodes = source.nodes.slice(0, 2000), byId = new Map(nodes.map((n) => [n.id, n]));
+  const withinScope = (node: Node<WorkflowNodeData>) => { const seen = new Set<string>(); let parent = node.data.parentId; while (parent && !seen.has(parent)) { seen.add(parent); const ancestor = byId.get(parent); if (ancestor?.data.activityId === 'transaction-scope') return true; parent = ancestor?.data.parentId; } return false; };
   if (source.nodes.length > nodes.length) { truncated = true; add('WA001', 'warning', undefined, 'Workflow', 'Only the first 2,000 activities were analyzed.', 'Split the workflow into smaller files before relying on the analysis.'); }
   if (!nodes.length) add('WA002', 'warning', undefined, 'Workflow', 'The workflow has no activities.', 'Add activities before running or testing this workflow.');
   const targets = new Map(source.targets.map((t) => [t.id, t]));
@@ -55,7 +57,7 @@ export function analyzeWorkflow(source: AnalysisSource): AnalysisReport {
     const activity = getActivity(node.data.activityId);
     if (queueActivities.includes(node.data.activityId)) {
       try { validateQueueActivity(node.data.activityId, node.data.properties); } catch (e) { add('WA410', 'error', node, 'Queue / outputs', e instanceof Error ? e.message : 'Invalid queue activity.', 'Use a static queue name and valid transaction/output variables.'); }
-      if (node.data.activityId === 'get-transaction-item' && !nodes.some(n => n.data.activityId === 'set-transaction-status' || n.data.activityId === 'invoke-workflow')) add('WA411', 'warning', node, 'Transaction result', 'This workflow claims work but has no Set Transaction Status activity.', 'Commit each claimed item. Uncommitted work is released with an Application failure at the end of the run.');
+      if (node.data.activityId === 'get-transaction-item' && !nodes.some(n => ['set-transaction-status', 'transaction-scope', 'invoke-workflow'].includes(n.data.activityId))) add('WA411', 'warning', node, 'Transaction result', 'This workflow claims work but has no Set Transaction Status activity.', 'Commit each claimed item. Uncommitted work is released with an Application failure at the end of the run.');
     }
     if (['get-asset', 'get-credential'].includes(node.data.activityId)) {
       try {
@@ -73,7 +75,7 @@ export function analyzeWorkflow(source: AnalysisSource): AnalysisReport {
     if (!activity) add('WA102', 'error', node, 'Activity', 'This activity is not in the Studio activity registry.', 'Replace it with a supported activity from the Activities panel.');
     if (activity?.isContainer && !node.data.isContainer) add('WA119', 'error', node, 'Structure', 'This control activity is not marked as a container and will not execute its block normally.', 'Restore the activity container flag or recreate the block from Activities.');
     if (['while', 'end'].includes(node.data.activityId) || node.data.activityId.startsWith('outlook-desktop-')) add('WA103', 'warning', node, 'Activity', 'This activity currently falls back to simulated execution in Studio.', 'Do not rely on this activity for real automation until its runtime implementation is available.');
-    if (node.data.activityId === 'invoke-workflow') {
+    if (hasWorkflowCall(node)) {
       add('WA300', 'warning', node, 'Workflow File', 'Invoked file and argument declarations need a dependency check.', 'Use Analyze in the desktop app to read and validate this workflow dependency.');
       add('WA305', 'info', node, 'Publishing', 'Publishing includes called workflows and UI targets in a versioned portable package.', 'Prepare the package in Publish and run it with a Robot version that supports portable packages.');
       const outputs = node.data.properties.outArguments;
@@ -85,7 +87,14 @@ export function analyzeWorkflow(source: AnalysisSource): AnalysisReport {
       if (seen.has(parent)) { add('WA111', 'error', node, 'Parent', 'The parent hierarchy contains a cycle.', 'Remove the cyclic parent link.'); break; }
       seen.add(parent); parent = byId.get(parent)?.data.parentId;
     }
-    if (node.data.isContainer && node.data.parentId) add('WA112', 'error', node, 'Structure', 'Nested containers are not recursively executed by the current Studio engine.', 'Move this block to the root or flatten its activities.');
+    const scopeAncestor = [...seen].some(id => id !== node.id && byId.get(id)?.data.activityId === 'transaction-scope');
+    if (node.data.activityId === 'transaction-scope') {
+      try { validateTransactionScope(node.data.properties); } catch (error) { add('WA420', 'error', node, 'Transaction Scope', error instanceof Error ? error.message : 'Invalid scope.', 'Choose a claimed transaction and distinct output variables.'); }
+      if (scopeAncestor) add('WA421', 'error', node, 'Scope nesting', 'Transaction Scopes cannot be nested.', 'Finish the current transaction before starting another scope.');
+      if (node.data.branches?.length) add('WA422', 'error', node, 'Structure', 'Transaction Scope uses one processing body.', 'Put activities in its Do block and select an optional recovery workflow in Properties.');
+    }
+    if (scopeAncestor && ['get-transaction-item', 'set-transaction-status'].includes(node.data.activityId)) add('WA423', 'error', node, 'Transaction ownership', 'Transaction Scope owns the current item and its status.', 'Claim before the scope and let the scope commit its result automatically.');
+    if (node.data.isContainer && node.data.parentId && !scopeAncestor && node.data.activityId !== 'transaction-scope') add('WA112', 'error', node, 'Structure', 'Nested containers are not recursively executed by the current Studio engine.', 'Move this block to the root or flatten its activities.');
     const references = [...(node.data.childIds ?? []).map((id) => ({ id, branchId: undefined as string | undefined })), ...(node.data.branches ?? []).flatMap((b) => b.childIds.map((id) => ({ id, branchId: b.id })))];
     const children = new Set<string>();
     for (const ref of references) {
@@ -156,8 +165,9 @@ export function analyzeWorkflow(source: AnalysisSource): AnalysisReport {
   const visited = new Set<string>();
   const check = (node: Node<WorkflowNodeData>, available: Set<string>, local: Set<string>) => {
     const props = getActivity(node.data.activityId)?.properties ?? [];
-    if (node.data.activityId === 'invoke-workflow' && node.data.properties.inArguments && typeof node.data.properties.inArguments === 'object') {
-      for (const item of Object.values(node.data.properties.inArguments)) if (typeof item === 'string') for (const name of new Set([...item.matchAll(/\{\{\s*([A-Za-z_]\w*)[^{}]*\}\}/g)].map((match) => match[1]))) reference(name, node, 'In arguments', available, local);
+    if (hasWorkflowCall(node) && node.data.properties.inArguments && typeof node.data.properties.inArguments === 'object') {
+      const callValues = node.data.activityId === 'transaction-scope' ? new Set([...available, ...writes(node)]) : available;
+      for (const item of Object.values(node.data.properties.inArguments)) if (typeof item === 'string') for (const name of new Set([...item.matchAll(/\{\{\s*([A-Za-z_]\w*)[^{}]*\}\}/g)].map((match) => match[1]))) reference(name, node, 'In arguments', callValues, local);
     }
     for (const prop of props) {
       const current = value(node, prop.name);
@@ -184,9 +194,12 @@ export function analyzeWorkflow(source: AnalysisSource): AnalysisReport {
       visited.add(node.id); check(node, available, local);
       for (const name of writes(node)) available.add(name);
       const children = (ids: string[]) => ids.map((id) => byId.get(id)).filter((n): n is Node<WorkflowNodeData> => !!n);
-      if (!node.data.isContainer || node.data.parentId) continue;
+      if (!node.data.isContainer || node.data.parentId && !withinScope(node) && node.data.activityId !== 'transaction-scope') continue;
       const branches = node.data.branches ?? [];
-      if (node.data.activityId === 'for-each') {
+      if (node.data.activityId === 'transaction-scope') {
+        // A handled failure can skip any later body output; only the scope's own outputs are guaranteed.
+        walk(children(node.data.childIds ?? []), available, local);
+      } else if (node.data.activityId === 'for-each') {
         const scoped = new Set(local); if (node.data.loopVariable) scoped.add(node.data.loopVariable.name);
         walk(children(node.data.childIds ?? []), available, scoped);
       } else if (node.data.activityId === 'if' || node.data.activityId === 'try-catch') {

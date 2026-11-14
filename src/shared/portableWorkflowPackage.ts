@@ -1,4 +1,5 @@
-import { loadWorkflowGraph, parseWorkflowDefinition, validateArguments, type WorkflowDefinition, type WorkflowLoader } from './invokedWorkflows';
+import { hasWorkflowCall, loadWorkflowGraph, parseWorkflowDefinition, validateArguments, type WorkflowDefinition, type WorkflowLoader } from './invokedWorkflows';
+import { validateTransactionScope } from './transactionScope';
 import { isUiTarget, resolveTargetBindings, type UiTarget } from './uiTargets';
 import { robotActivities } from './robotCapabilities';
 import { queueActivities, validateQueueActivity } from './queues';
@@ -29,10 +30,11 @@ export function validateRobotWorkflow(def: WorkflowDefinition) {
   if (!def.nodes.some((n) => !n.data.parentId)) throw Error('Workflow has no root activities.');
   for (const node of def.nodes) {
     const d = node.data;
+    if (d.activityId === 'transaction-scope') validateTransactionScope(d.properties);
     if (queueActivities.includes(d.activityId)) validateQueueActivity(d.activityId, d.properties);
     if (['get-asset', 'get-credential'].includes(d.activityId)) assetRequirement(d.activityId, d.properties);
     if (!robotActivities.has(d.activityId)) throw Error(`Robot does not support activity: ${d.activityId}`);
-    if (['if', 'for-each', 'try-catch', 'retry-scope'].includes(d.activityId) && !d.isContainer) throw Error(`Control activity must be a container: ${d.label}`);
+    if (['if', 'for-each', 'try-catch', 'retry-scope', 'transaction-scope'].includes(d.activityId) && !d.isContainer) throw Error(`Control activity must be a container: ${d.label}`);
     if (d.parentId && !byId.has(d.parentId)) throw Error(`Missing parent for activity: ${d.label}`);
     const seen = new Set([node.id]); let parent = d.parentId;
     while (parent) { if (seen.has(parent)) throw Error('Workflow hierarchy contains a cycle.'); seen.add(parent); parent = byId.get(parent)?.data.parentId; }
@@ -74,7 +76,7 @@ export async function buildPortablePackage(root: WorkflowDefinition, rootPath: s
   const uiTargets = [...catalog.values()];
   const workflows = entries.map((entry) => {
     const definition = fields(entry.definition);
-    definition.nodes = resolveTargetBindings(definition.nodes, uiTargets).map((node) => node.data.activityId === 'invoke-workflow' ? { ...node, data: { ...node.data, properties: { ...node.data.properties, workflowFile: PACKAGE_PREFIX + ids.get(key(graph.resolve(entry.path, node.id).path))! } } } : node);
+    definition.nodes = resolveTargetBindings(definition.nodes, uiTargets).map((node) => hasWorkflowCall(node) ? { ...node, data: { ...node.data, properties: { ...node.data.properties, workflowFile: PACKAGE_PREFIX + ids.get(key(graph.resolve(entry.path, node.id).path))! } } } : node);
     const used = new Set(definition.nodes.flatMap((n) => Object.values(n.data.targetBindings ?? {})));
     definition.uiTargets = uiTargets.filter((t) => used.has(t.id));
     validateRobotWorkflow(definition);
@@ -103,7 +105,7 @@ export async function validatePortablePackage(input: unknown): Promise<{ definit
     const parsed = parseWorkflowDefinition(JSON.stringify(file.definition));
     if ('portablePackage' in parsed) throw Error('Nested package envelopes are not supported.');
     validateRobotWorkflow(parsed); resolveTargetBindings(parsed.nodes, manifest.uiTargets);
-    for (const node of parsed.nodes) if (node.data.activityId === 'invoke-workflow' && (typeof node.data.properties.workflowFile !== 'string' || !/^package:\/\/wf-\d+$/.test(node.data.properties.workflowFile))) throw Error('Packaged calls must use package references, not filesystem paths.');
+    for (const node of parsed.nodes) if (hasWorkflowCall(node) && (typeof node.data.properties.workflowFile !== 'string' || !/^package:\/\/wf-\d+$/.test(node.data.properties.workflowFile))) throw Error('Packaged calls must use package references, not filesystem paths.');
     files.set(file.id, parsed);
   }
   const entry = files.get(manifest.entryWorkflowId);
