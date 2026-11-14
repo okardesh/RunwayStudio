@@ -7,6 +7,7 @@ import { useRobotJobsStore, pollRobotJobs, stopRobotJob, robotJobHistoryId } fro
 import { useUiStore } from '../../store/uiStore';
 import './RobotJobsPanel.css';
 import { TransactionHistory } from '../Queues/TransactionHistory';
+import { HumanTaskHistory } from '../HumanTasks/HumanTaskHistory';
 import { useAssetsStore } from '../../store/assetsStore';
 
 export function RobotJobsMonitor({ connection }: { connection: RunwayConnection | null }) {
@@ -105,7 +106,7 @@ export function RobotJobsPanel({ connection }: { connection: RunwayConnection | 
   </div>;
 }
 export function RobotJobDetails({ job }: { job: import('../../store/robotJobsStore').RemoteJob }) {
-  return <><TransactionHistory events={job.transactions} />{job.environment && <div className="rj-notice">Environment: {job.environment.name}</div>}<small className="rj-package-id">Package {job.version} · {job.packageId}</small>
+  return <><HumanTaskHistory events={job.humanTasks} />{job.waitingTask && job.status === 'waiting' && <div className="rj-notice">Waiting for human task {job.waitingTask.id}. Robot is available for other jobs.</div>}<TransactionHistory events={job.transactions} />{job.environment && <div className="rj-notice">Environment: {job.environment.name}</div>}<small className="rj-package-id">Package {job.version} · {job.packageId}</small>
     {job.error && <div className="rj-notice rj-error">{job.error}</div>}
     <details><summary>In / Out arguments</summary><pre>{JSON.stringify({ In: job.inputPreview, Out: job.outputs ?? {} }, null, 2)}</pre></details>
     {!!job.workflowCalls?.length && <details><summary>Workflow calls</summary>{job.workflowCalls.map((c, i) => <div key={i} style={{ paddingLeft: Math.min(c.depth, 16) * 12 }}>{c.name} · {c.status}</div>)}</details>}

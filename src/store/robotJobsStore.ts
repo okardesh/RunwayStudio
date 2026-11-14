@@ -18,7 +18,7 @@ function safeJob(job: RemoteJob, secrets: string[] = []): RemoteJob {
 function publish(job: RemoteJob) {
   const run: ExecutionRun = { id: historyId(job), projectName: job.workflowName, filePath: null,
     startedAt: job.startedAt, endedAt: job.completedAt, debug: false,
-    status: job.status === 'success' ? 'completed' : job.status === 'failed' ? 'error' : job.status === 'stopped' ? 'stopped' : 'running',
+    status: job.status === 'success' ? 'completed' : job.status === 'failed' ? 'error' : job.status === 'stopped' ? 'stopped' : job.status === 'waiting' ? 'waiting' : 'running',
     arguments: { inputs: job.inputPreview, outputs: job.outputs }, error: job.error, steps: [], robotJob: job };
   useExecutionHistoryStore.getState().publish(run, true);
 }

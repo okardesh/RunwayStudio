@@ -10,6 +10,9 @@ import { RobotJobRegistry, type RobotTrigger } from './jobRegistry';
 import type { RobotJobView } from '../../src/shared/robotJobs';
 import { robotAssetResolver } from './assetsClient';
 import { robotQueueSession } from './queuesClient';
+import { robotHumanClient } from './humanClient';
+import { jobJournal } from './jobJournal';
+import type { HumanCheckpoint } from '../../src/shared/humanTasks';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.join(__dirname, '..');
@@ -39,12 +42,14 @@ let tray: Tray | null = null;
 let connectionWindow: BrowserWindow | null = null;
 let listener: http.Server | null = null;
 let isQuitting = false;
-const jobs = new RobotJobRegistry(executeActivity, async (trigger, view, result) => {
-  await report(trigger, view.status as 'success' | 'failed' | 'stopped', view.logs, view.error, result, view);
+const jobs = new RobotJobRegistry(executeActivity, async (trigger, view, result, checkpoint) => {
+  await report(trigger, view.status as 'success' | 'failed' | 'stopped' | 'waiting', view.logs, view.error, result, view, checkpoint);
   refreshTray();
   new Notification({ title: 'Runway Robot', body: `Job ${view.jobId}: ${view.status}` }).show();
 }, (trigger, signal) => connection ? robotAssetResolver(trigger, connection.serverUrl, connection.apiKey, signal) : undefined,
-(trigger, signal) => connection ? robotQueueSession(trigger, connection.serverUrl, connection.apiKey, signal) : undefined);
+(trigger, signal) => connection ? robotQueueSession(trigger, connection.serverUrl, connection.apiKey, signal) : undefined,
+trigger => connection ? robotHumanClient(trigger, connection.serverUrl, connection.apiKey) : undefined,
+jobJournal(app.getPath('userData')));
 let connection: { serverUrl: string; apiKey: string; deviceName: string } | null = null;
 
 function logoPath() {
@@ -143,14 +148,14 @@ function send(response: ServerResponse, status: number, body: unknown) {
   response.writeHead(status, { 'Content-Type': 'application/json' });
   response.end(JSON.stringify(body));
 }
-async function report(trigger: Trigger, status: 'success' | 'failed' | 'stopped', logs: JobLog[], error?: string, result?: RobotWorkflowResult, view?: RobotJobView) {
+async function report(trigger: Trigger, status: 'success' | 'failed' | 'stopped' | 'waiting', logs: JobLog[], error?: string, result?: RobotWorkflowResult, view?: RobotJobView, checkpoint?: HumanCheckpoint) {
   const callbackUrl = new URL(trigger.callbackUrl);
-  if (!connection || (callbackUrl.protocol !== 'http:' && callbackUrl.protocol !== 'https:')) return;
+  if (!connection || !['http:', 'https:'].includes(callbackUrl.protocol) || callbackUrl.origin !== new URL(connection.serverUrl).origin) throw Error('Connect to the checkpoint’s Maestro server before reporting it.');
   try {
     const response = await fetch(callbackUrl, {
       method: 'POST', redirect: 'error', signal: AbortSignal.timeout(12000),
       headers: { 'Content-Type': 'application/json', 'X-API-Key': connection.apiKey, 'X-Tenant-Id': ORGANIZATION_ID },
-      body: JSON.stringify({ jobId: trigger.jobId, workflowId: trigger.workflowId, status, logs, error, ...(view ? { job: view } : {}), ...(result ? { outputs: trigger.assetContext ? view?.outputs : result.outputs, package: result.package, workflowCalls: result.calls } : {}), completedAt: new Date().toISOString(), apiKey: connection.apiKey }),
+      body: JSON.stringify({ jobId: trigger.jobId, workflowId: trigger.workflowId, status, logs, error, ...(view ? { job: view } : {}), ...(checkpoint ? { checkpoint } : {}), ...(result ? { outputs: trigger.assetContext ? view?.outputs : result.outputs, package: result.package, workflowCalls: result.calls } : {}), completedAt: new Date().toISOString(), apiKey: connection.apiKey }),
     });
     if (!response.ok) throw Error(`Runway callback returned HTTP ${response.status}.`);
   } catch (reason) {
@@ -171,14 +176,16 @@ function startListener(): Promise<void> {
       const job = match[2] ? await jobs.stop(match[1]) : jobs.get(match[1]);
       return send(response, job ? 200 : 404, job ? { ok: true, job } : { ok: false, error: 'Job not found or no longer retained.' });
     }
-    if (request.method !== 'POST' || route.pathname !== '/api/robot/jobs') return send(response, 404, { ok: false, error: 'Not found.' });
+    const resumeRoute = route.pathname.match(/^\/api\/robot\/jobs\/([a-zA-Z0-9_-]{1,120})\/resume$/);
+    if (request.method !== 'POST' || route.pathname !== '/api/robot/jobs' && !resumeRoute) return send(response, 404, { ok: false, error: 'Not found.' });
     try {
       const trigger = JSON.parse(await readRequest(request)) as Trigger;
       if (!trigger.jobId || !trigger.callbackUrl || (!trigger.definition && !trigger.workflow)) return send(response, 400, { ok: false, error: 'jobId, callbackUrl, and workflow are required.' });
       if (!/^[a-zA-Z0-9_-]{1,120}$/.test(trigger.jobId)) throw Error('Invalid job ID.');
+      if (resumeRoute && (trigger.jobId !== resumeRoute[1] || !trigger.resume) || !resumeRoute && trigger.resume) throw Error('Invalid resume request.');
       if (new URL(trigger.callbackUrl).origin !== new URL(connection.serverUrl).origin) throw Error('Callback must belong to the connected Runway server.');
       const job = jobs.submit(trigger);
-      send(response, 202, { ok: true, jobId: trigger.jobId, status: job.status });
+      send(response, 202, { ok: true, jobId: trigger.jobId, status: job.status, job });
       refreshTray();
     } catch {
       send(response, 400, { ok: false, error: 'Invalid job JSON.' });

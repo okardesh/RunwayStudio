@@ -4,6 +4,7 @@ import { uiAutomationActivities } from './categories/uiAutomation';
 import { dataExtractionActivities } from './categories/dataExtraction';
 import { waitVerifyActivities } from './categories/waitVerify';
 import { queueActivityDefinitions } from './categories/queues';
+import { humanTaskActivities } from './categories/humanTasks';
 import { assetActivities } from './categories/assets';
 import { systemActivities } from './categories/system';
 import { controlFlowActivities } from './categories/controlFlow';
@@ -13,6 +14,7 @@ import { office365Activities } from './categories/office365';
 import { outlookWindowsActivities } from './categories/outlookWindows';
 
 export const activityCategories: ActivityCategory[] = [
+  { id: 'human', name: 'Human Tasks', icon: '👤', activities: humanTaskActivities },
   { id: 'queues', name: 'Queues & Transactions', icon: '📥', activities: queueActivityDefinitions },
   { id: 'assets', name: 'Maestro Assets', icon: '🔐', activities: assetActivities },
   {

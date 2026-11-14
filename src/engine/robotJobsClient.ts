@@ -42,6 +42,6 @@ export async function submitRobotJob(connection: RunwayConnection, request: Robo
 export async function readRobotJob(connection: RunwayConnection, jobId: string, stop = false): Promise<RobotJobView> {
   const data = await robotJobsRequest(connection, '/' + encodeURIComponent(jobId) + (stop ? '/stop' : ''), stop ? 'POST' : 'GET');
   const j = data.job;
-  if (!j || j.jobId !== jobId || !['queued', 'running', 'stopping', 'stopped', 'success', 'failed'].includes(j.status) || !Number.isFinite(j.startedAt) || j.completedAt !== undefined && !Number.isFinite(j.completedAt) || !Array.isArray(j.logs) || j.logs.length > 2000 || j.logs.some((l: any) => !Number.isSafeInteger(l.sequence) || typeof l.timestamp !== 'string' || !['info', 'error'].includes(l.level) || typeof l.message !== 'string')) throw Error('Runway returned invalid job status data.');
+  if (!j || j.jobId !== jobId || !['queued', 'running', 'waiting', 'stopping', 'stopped', 'success', 'failed'].includes(j.status) || !Number.isFinite(j.startedAt) || j.completedAt !== undefined && !Number.isFinite(j.completedAt) || !Array.isArray(j.logs) || j.logs.length > 2000 || j.logs.some((l: any) => !Number.isSafeInteger(l.sequence) || typeof l.timestamp !== 'string' || !['info', 'error'].includes(l.level) || typeof l.message !== 'string')) throw Error('Runway returned invalid job status data.');
   return j;
 }

@@ -1,5 +1,6 @@
 import { hasWorkflowCall, loadWorkflowGraph, parseWorkflowDefinition, validateArguments, type WorkflowDefinition, type WorkflowLoader } from './invokedWorkflows';
 import { validateTransactionScope } from './transactionScope';
+import { humanActivities, validateHumanActivity, validateHumanPlacement } from './humanTasks';
 import { isUiTarget, resolveTargetBindings, type UiTarget } from './uiTargets';
 import { robotActivities } from './robotCapabilities';
 import { queueActivities, validateQueueActivity } from './queues';
@@ -30,6 +31,7 @@ export function validateRobotWorkflow(def: WorkflowDefinition) {
   if (!def.nodes.some((n) => !n.data.parentId)) throw Error('Workflow has no root activities.');
   for (const node of def.nodes) {
     const d = node.data;
+    if (humanActivities.includes(d.activityId)) { validateHumanActivity(d.activityId, d.properties); if (d.parentId) throw Error('Human task activities must be at the main workflow root.'); }
     if (d.activityId === 'transaction-scope') validateTransactionScope(d.properties);
     if (queueActivities.includes(d.activityId)) validateQueueActivity(d.activityId, d.properties);
     if (['get-asset', 'get-credential'].includes(d.activityId)) assetRequirement(d.activityId, d.properties);
@@ -74,6 +76,7 @@ export async function buildPortablePackage(root: WorkflowDefinition, rootPath: s
     catalog.set(targetId, copy(target));
   }
   const uiTargets = [...catalog.values()];
+  validateHumanPlacement(entries.map(e => e.definition));
   const workflows = entries.map((entry) => {
     const definition = fields(entry.definition);
     definition.nodes = resolveTargetBindings(definition.nodes, uiTargets).map((node) => hasWorkflowCall(node) ? { ...node, data: { ...node.data, properties: { ...node.data.properties, workflowFile: PACKAGE_PREFIX + ids.get(key(graph.resolve(entry.path, node.id).path))! } } } : node);
@@ -109,6 +112,7 @@ export async function validatePortablePackage(input: unknown): Promise<{ definit
     files.set(file.id, parsed);
   }
   const entry = files.get(manifest.entryWorkflowId);
+  if (entry) validateHumanPlacement([entry, ...[...files.values()].filter(d => d !== entry)]);
   if (!entry || canonical(fields(definition)) !== canonical(fields(entry))) throw Error('Entry workflow does not match the portable package.');
   const loader: WorkflowLoader = async (requested) => {
     if (!/^package:\/\/wf-\d+$/.test(requested)) throw Error('Robot cannot resolve a local workflow path.');

@@ -1,5 +1,6 @@
 /** Real native handlers plus the control activities implemented by the package runner. */
 export const robotActivities = new Set([
+  'create-human-task', 'wait-for-human-task',
   'transaction-scope', 'business-rule-exception',
   'use-app-browser','open-browser','close-browser','navigate-to','navigate-back','navigate-forward','refresh-page',
   'open-new-tab','close-tab','switch-tab','switch-frame','switch-default-content','accept-alert','dismiss-alert','maximize-window','execute-javascript',

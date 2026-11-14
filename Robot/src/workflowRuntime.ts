@@ -6,6 +6,7 @@ import { resolveLogMessage } from '../../src/shared/logMessageExpression';
 import { executeAssetActivity, protectDerivedValues, type AssetResolver } from '../../src/shared/assets';
 import { executeQueueActivity, queueActivities, type QueueRunSession } from '../../src/shared/queues';
 import { evaluateBreakpointCondition } from '../../src/engine/breakpointCondition';
+import { humanActivities, createHumanTask, humanCheckpoint, HumanTaskSuspended, safeHumanData, validateHumanPlacement, type HumanResume, type HumanTaskEvent } from '../../src/shared/humanTasks';
 
 export type RobotActivity = (id: string, props: Record<string, unknown>) => Promise<{ success: boolean; log: string; outputs?: Record<string, unknown> }>;
 export interface RobotWorkflowResult { outputs: Record<string, unknown>; package?: { id: string; version: string }; calls: Array<{ name: string; depth: number; status: 'completed' | 'error' }> }
@@ -15,7 +16,7 @@ function legacyDefinition(input: any): WorkflowDefinition {
   return parseWorkflowDefinition(JSON.stringify({ projectName: input.projectName ?? 'Workflow', nodes: (input.nodes ?? []).map((node: any) => ({ ...node, data: { ...node.data, label: node.data?.label ?? node.id, properties: node.data?.properties ?? {}, isContainer: node.data?.isContainer ?? !!node.data?.childIds?.length } })), edges: input.edges ?? [], variables: (input.variables ?? []).map((v: any) => ({ id: v.id ?? v.name, type: v.type ?? 'Object', scope: v.scope ?? 'Main', ...v })), arguments: input.arguments ?? [], uiTargets: input.uiTargets ?? [] }));
 }
 export class RobotJobStoppedError extends Error { constructor() { super('Job stopped at an activity boundary.'); this.name = 'RobotJobStoppedError'; } }
-export interface RobotRunOptions { signal?: AbortSignal; live?: boolean; onSecret?: (value: string) => void; resolveAsset?: AssetResolver; queueSession?: QueueRunSession }
+export interface RobotRunOptions { signal?: AbortSignal; live?: boolean; onSecret?: (value: string) => void; resolveAsset?: AssetResolver; queueSession?: QueueRunSession; createTask?: (data: Record<string, unknown>) => Promise<any>; resume?: HumanResume; onHuman?: (event: HumanTaskEvent) => void }
 /** Resolves calls solely from the submitted package, never the Robot filesystem. */
 export async function executeRobotWorkflow(input: unknown, inputs: Record<string, unknown>, native: RobotActivity, onLog: (level: 'info' | 'error', message: string) => void, options: RobotRunOptions = {}): Promise<RobotWorkflowResult> {
   if (!input || typeof input !== 'object' || Array.isArray(input) || !inputs || typeof inputs !== 'object' || Array.isArray(inputs)) throw Error('Invalid workflow or job inputs.');
@@ -29,6 +30,10 @@ export async function executeRobotWorkflow(input: unknown, inputs: Record<string
   }
   const checkStop = () => { if (options.signal?.aborted) throw new RobotJobStoppedError(); };
   const definitions = manifest ? manifest.workflows.map(w => w.definition) : [definition];
+  validateHumanPlacement([definition, ...manifest?.workflows.filter(w => w.id !== manifest!.entryWorkflowId).map(w => w.definition) ?? []]);
+  if (definitions.some(d => d.nodes.some(n => humanActivities.includes(n.data.activityId))) && (!manifest || !options.createTask)) throw Error('Human tasks require a published package launched through Maestro Robot Jobs.');
+  if (options.resume && (!manifest || options.resume.packageId !== manifest.id || !Number.isInteger(options.resume.cursor) || options.resume.cursor < 1 || options.resume.cursor > definition.nodes.filter(n => !n.data.parentId).length)) throw Error('Resume checkpoint does not match the pinned package.');
+  if (options.resume) { const wait = definition.nodes.filter(n => !n.data.parentId)[options.resume.cursor - 1]; if (wait.data.activityId !== 'wait-for-human-task' || wait.data.properties.output !== options.resume.output) throw Error('Resume must continue after its pinned Wait activity.'); }
   if (!options.queueSession && definitions.some(d => d.nodes.some(n => queueActivities.includes(n.data.activityId) || n.data.activityId === 'transaction-scope'))) throw Error('This workflow requires a Maestro queue context. Run it from Robot Jobs.');
   if (!options.resolveAsset && definitions.some(d => d.nodes.some(n => ['get-asset', 'get-credential'].includes(n.data.activityId)))) throw Error('This workflow requires a Maestro asset context. Select an environment and start it from Robot Jobs.');
   checkStop();
@@ -61,7 +66,8 @@ export async function executeRobotWorkflow(input: unknown, inputs: Record<string
       if (depth === 0 && (!manifest || own(values, name))) values[name] = cloneArgument(value);
       else if (manifest && depth === 0 && !workflow.arguments.some((a) => a.direction === 'In' && a.name === name)) throw Error(`Unknown root input: ${name}`);
     }
-    Object.assign(values, initializeArguments(workflow.arguments, workflow.variables, provided)); collect(values);
+    if (depth === 0 && options.resume) { Object.assign(values, safeHumanData(options.resume.values)); values[options.resume.output] = cloneArgument(options.resume.result); }
+    else Object.assign(values, initializeArguments(workflow.arguments, workflow.variables, provided)); collect(values);
     const name = workflow.projectName; emit('info', `${depth ? 'Calling' : 'Starting'} workflow: ${name} (depth ${depth})`);
     const call = { name, depth, status: 'error' as 'error' | 'completed' }; calls.push(call);
     const children = (ids: string[]) => ids.map((id) => { const node = byId.get(id); if (!node) throw Error('Missing child activity.'); return node; });
@@ -73,6 +79,15 @@ export async function executeRobotWorkflow(input: unknown, inputs: Record<string
       if (++steps > 10000) throw Error('Robot activity execution limit reached (10,000).');
       const d = node.data, p = d.properties, id = d.activityId;
       collect(p, true); emit('info', `Starting ${name} / ${d.label}`);
+      if (id === 'create-human-task') {
+        const task = await createHumanTask(node.id, p, values, [...secrets], options.createTask); options.onHuman?.({ taskId: task.id, phase: 'created', at: Date.now() }); return 'normal';
+      }
+      if (id === 'wait-for-human-task') {
+        if (options.queueSession?.activeCount) throw Error('Finish all queue transactions before waiting for human input.');
+        const cursor = nodes.filter(n => !n.data.parentId).findIndex(n => n.id === node.id) + 1;
+        const checkpoint = humanCheckpoint(node.id, cursor, p, values, [...secrets], manifest!.id);
+        options.onHuman?.({ taskId: checkpoint.taskId, phase: 'waiting', at: Date.now() }); throw new HumanTaskSuspended(checkpoint);
+      }
       if (id === 'business-rule-exception') {
         const message = String(resolveScopeValue(p.message ?? 'Business rule was not satisfied.', values));
         protectDerivedValues(p, { message }, values, [...secrets], value => { secrets.add(value); options.onSecret?.(value); });
@@ -160,7 +175,7 @@ export async function executeRobotWorkflow(input: unknown, inputs: Record<string
       }
       return d.isContainer ? sequence(children(d.childIds ?? [])) : 'normal';
     };
-    await sequence(nodes.filter((n) => !n.data.parentId));
+    await sequence(nodes.filter((n) => !n.data.parentId).slice(depth === 0 ? options.resume?.cursor ?? 0 : 0));
     checkStop();
     const outputs: Record<string, unknown> = Object.create(null);
     for (const arg of workflow.arguments.filter((a) => a.direction === 'Out')) {
@@ -173,6 +188,6 @@ export async function executeRobotWorkflow(input: unknown, inputs: Record<string
     if (manifest) emit('info', `Package ${manifest.id} · version ${manifest.version}`);
     const outputs = await run(definition, inputs, 0, manifest ? PACKAGE_PREFIX + manifest.entryWorkflowId : '<legacy>', []);
     return { outputs, calls, ...(manifest ? { package: { id: manifest.id, version: manifest.version } } : {}) };
-  } catch (error) { checkStop(); throw Error(clean(error instanceof Error ? error.message : 'Workflow execution failed.')); }
+  } catch (error) { checkStop(); if (error instanceof HumanTaskSuspended) { error.calls = calls.map((c, i) => ({ ...c, status: i === 0 ? 'waiting' : c.status })); throw error; } throw Error(clean(error instanceof Error ? error.message : 'Workflow execution failed.')); }
   finally { if (!options.live) for (const event of events) onLog(event.level, clean(event.message)); }
 }

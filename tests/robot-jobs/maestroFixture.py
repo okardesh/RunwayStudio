@@ -77,7 +77,10 @@ class Handler(BaseHTTPRequestHandler):
             self._read_json_body()
             self._respond(200, {'ok': True, 'authenticated': True, 'canUseRobots': True, 'apiKey': 'robot-fixture-key'})
         elif self.path == '/fixture/control':
-            flags.update(self._read_json_body())
+            values = self._read_json_body()
+            if values.get('expireTask'):
+                with sqlite3.connect(namespace['WORKFLOWS_DB']) as conn: conn.execute('UPDATE studio_human_tasks SET expires_at=? WHERE id=?', (int(time.time()*1000)-1, values['expireTask']))
+            flags.update(values)
             self._respond(200, {'ok': True})
         elif flags['offline']:
             self._read_json_body()
@@ -86,6 +89,6 @@ class Handler(BaseHTTPRequestHandler):
             jobs.handle(self, 'POST', urlparse(self.path), namespace)
 
 
-server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+server = ThreadingHTTPServer(('127.0.0.1', config.get('port', 0)), Handler)
 print(json.dumps({'url': 'http://127.0.0.1:' + str(server.server_port)}), flush=True)
 server.serve_forever()

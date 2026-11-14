@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   storeRunwayApiKey: (serverUrl: string, apiKey: string) => ipcRenderer.invoke('runway:store-api-key', serverUrl, apiKey) as Promise<boolean>,
   deleteRunwayApiKey: (serverUrl: string) => ipcRenderer.invoke('runway:delete-api-key', serverUrl) as Promise<void>,
   requestStudioQueues: (url: string, apiKey: string, tenantId: string, method: 'GET' | 'POST', payload?: unknown, sessionId?: string) => ipcRenderer.invoke('runway:studio-queues', { url, apiKey, tenantId, method, payload, sessionId }),
+  requestHumanTasks: (url: string, apiKey: string, tenantId: string, method: 'GET' | 'POST', payload?: unknown, personalToken?: string) => ipcRenderer.invoke('runway:human-tasks', { url, apiKey, tenantId, method, payload, personalToken }),
   requestStudioAssets: (url: string, apiKey: string, tenantId: string, method: 'GET' | 'POST', payload?: unknown) => ipcRenderer.invoke('runway:studio-assets', { url, apiKey, tenantId, method, payload }),
   requestRobotJobs: (url: string, apiKey: string, tenantId: string, method: 'GET' | 'POST', payload?: unknown) => ipcRenderer.invoke('runway:robot-jobs', { url, apiKey, tenantId, method, payload }),
   publishRunwayWorkflow: (url: string, apiKey: string, tenantId: string, payload: unknown) => ipcRenderer.invoke('runway:publish-workflow', { url, apiKey, tenantId, payload }) as Promise<{ networkError: boolean; status: number; body: string }>,

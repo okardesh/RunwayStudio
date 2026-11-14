@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { TestRunResult } from '../shared/workflowTests';
 
-export type RunStatus = 'running' | 'completed' | 'error' | 'stopped' | 'interrupted';
+export type RunStatus = 'running' | 'waiting' | 'completed' | 'error' | 'stopped' | 'interrupted';
 export interface ExecutionStep {
   id: string;
   nodeId: string;
@@ -26,6 +26,7 @@ export interface ExecutionRun {
   debug: boolean;
   environment?: { id: string; name: string };
   transactions?: import('../shared/queues').TransactionEvent[];
+  humanTasks?: import('../shared/humanTasks').HumanTaskEvent[];
   parentRunId?: string;
   rootRunId?: string;
   invocationNodeId?: string;

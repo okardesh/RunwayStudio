@@ -4,6 +4,7 @@ import { getActivity } from '../activities/registry';
 import type { UiTarget } from '../shared/uiTargets';
 import { hasWorkflowCall, validateArguments, validArgumentName } from '../shared/invokedWorkflows';
 import { validateTransactionScope } from '../shared/transactionScope';
+import { humanActivities, validateHumanActivity } from '../shared/humanTasks';
 import { queueActivities, validateQueueActivity } from '../shared/queues';
 import { assetRequirement, type AssetCatalog } from '../shared/assets';
 
@@ -55,6 +56,11 @@ export function analyzeWorkflow(source: AnalysisSource): AnalysisReport {
     if (!node.id || ids.has(node.id)) add('WA101', 'error', node, 'Structure', 'Activity IDs must be nonempty and unique.', 'Repair the duplicate or missing ID in the workflow definition.');
     ids.add(node.id);
     const activity = getActivity(node.data.activityId);
+    if (humanActivities.includes(node.data.activityId)) {
+      try { validateHumanActivity(node.data.activityId, node.data.properties); } catch (error) { add('WA430', 'error', node, 'Human task', error instanceof Error ? error.message : 'Invalid task.', 'Set the assignee, form and output variable.'); }
+      if (node.data.parentId) add('WA431', 'error', node, 'Placement', 'Durable human tasks must be top-level activities in the main workflow.', 'Place approval before queue processing; invoke processing workflows after the wait.');
+      add('WA432', 'info', node, 'Execution', 'Run publishes durable approval work through Robot Jobs. Local Debug uses mock decisions.', 'Do not keep credentials or open transaction claims across a wait.');
+    }
     if (queueActivities.includes(node.data.activityId)) {
       try { validateQueueActivity(node.data.activityId, node.data.properties); } catch (e) { add('WA410', 'error', node, 'Queue / outputs', e instanceof Error ? e.message : 'Invalid queue activity.', 'Use a static queue name and valid transaction/output variables.'); }
       if (node.data.activityId === 'get-transaction-item' && !nodes.some(n => ['set-transaction-status', 'transaction-scope', 'invoke-workflow'].includes(n.data.activityId))) add('WA411', 'warning', node, 'Transaction result', 'This workflow claims work but has no Set Transaction Status activity.', 'Commit each claimed item. Uncommitted work is released with an Application failure at the end of the run.');

@@ -90,7 +90,7 @@ async function main() {
     const sourceArg = process.argv.find(a => a.startsWith('--maestro-source='));
     if (sourceArg) {
       await waitFor(async () => !(await (await fetch('http://127.0.0.1:' + robotPort + '/health')).json()).activeJob);
-      await maestroTest(sourceArg.slice('--maestro-source='.length), packages, robotPort, native, { held: () => held, release: () => release() });
+      await maestroTest(sourceArg.slice('--maestro-source='.length), packages, robotPort, native, { held: () => held, release: () => release(), calls: () => calls });
     }
   } finally { release?.(); global.robotQuit?.(); await new Promise(r => server.close(r)); }
   console.log('All Robot Jobs checks passed. Artifacts: ' + out);
@@ -160,6 +160,13 @@ async function maestroTest(source, packages, robotPort, native, control) {
       packages = [...packages, { workflowId: 'scope', name: 'Scope HTTP ' + mode, version, definition: bundle }];
     }
   }
+  if (process.argv.includes('--human-tasks')) {
+    const engine = require(path.join(out, 'engine.cjs'));
+    for (const version of ['14.0.0','15.0.0','16.0.0','17.0.0']) {
+      const definition = def('Human HTTP '+version, [node('before','log-message',{message:'BEFORE_HUMAN_'+version}),node('prep-add','add-queue-item',{queueName:'HumanPreparations',reference:'prep-'+version,content:'{}'}),node('prep-get','get-transaction-item',{queueName:'HumanPreparations',output:'prep'}),node('prep-set','set-transaction-status',{transaction:'{{prep}}',status:'Successful',output:'prepResult'}),node('create','create-human-task',{title:'Approve invoice',assignee:'role:finance',context:'{"amount":42}',formSchema:'[{"name":"costCenter","label":"Cost center","type":"String","required":true}]',timeoutMinutes:1,output:'task'}),node('wait','wait-for-human-task',{task:'{{task}}',output:'approval'}),node('result','assign',{to:'decision',value:'{{approval.decision}}'}),node('after','log-message',{message:'AFTER_HUMAN_'+version+' {{approval.decision}}'})],[arg('decision','Out','String',false)]);
+      const bundle = await engine.buildPortablePackage(definition,path.join(out,'human.rpa.json'),[] ,version,async()=>{throw Error('No calls')}); packages=[...packages,{workflowId:'human',name:'Human HTTP '+version,version,definition:bundle}];
+    }
+  }
   const config = path.join(out, 'maestro-config.json'); fs.writeFileSync(config, JSON.stringify({ packages, robotUrl: 'http://127.0.0.1:' + robotPort + '/api/robot/jobs' }));
   const start = async () => {
     const child = spawn(python, [path.join(__dirname, 'maestroFixture.py'), source, config], { windowsHide: true, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' }, stdio: ['ignore', 'pipe', 'pipe'] }); let errors = '';
@@ -170,12 +177,14 @@ async function maestroTest(source, packages, robotPort, native, control) {
     return { child, url, errors: () => errors, stop: () => new Promise(resolve => { if (child.exitCode !== null || child.signalCode !== null) return resolve(); child.once('exit', resolve); child.kill(); }) };
   };
   let service = await start();
+  if (process.argv.includes('--human-tasks')) { const saved = JSON.parse(fs.readFileSync(config)); saved.port = Number(new URL(service.url).port); fs.writeFileSync(config,JSON.stringify(saved)); }
   const post = async (url, payload) => fetch(url, { method: 'POST', headers: { 'X-API-Key': 'studio-fixture-key', 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
   try {
     assert.deepEqual(await global.robotIpc.get('robot:connect')(null, service.url), { ok: true });
     if (process.argv.includes('--assets')) await assetHttpTest(service.url, packages.find(p => p.workflowId === 'assets').definition);
     if (process.argv.includes('--queues')) await queueHttpTest(service.url, packages.filter(p => p.workflowId === 'queue'), control);
     if (process.argv.includes('--transaction-scope')) await scopeHttpTest(service.url, packages.filter(p => p.workflowId === 'scope'), control);
+    if (process.argv.includes('--human-tasks')) await humanHttpTest(service.url,packages.filter(p=>p.workflowId==='human'),{...control,restart:async()=>{await service.stop();service=await start();}});
     const r = { requestId: crypto.randomUUID(), robotId: 'r1', workflowId: 'published-1.0.0', version: '1.0.0', packageId: packages[0].definition.portablePackage.id, inputs: { greeting: 'Maestro durable result', count: 8 } };
     const created = await (await post(service.url + '/api/v1/robot-jobs', r)).json(); assert.ok(created.jobId);
     await waitFor(async () => (await (await fetch(service.url + '/api/v1/robot-jobs/' + created.jobId, { headers: { 'X-API-Key': 'studio-fixture-key' } })).json()).job?.status === 'success');
@@ -268,5 +277,24 @@ async function scopeHttpTest(url, packages, control) {
     await waitFor(async () => !(await (await fetch('http://127.0.0.1:' + process.env.RUNWAY_ROBOT_PORT + '/health')).json()).activeJob);
   }
   console.log('PASS Robot Jobs → Maestro Transaction Scope auto-commit grants, Business final failure, queue retry, packaged recovery and recovery failure/Stop history');
+}
+async function humanHttpTest(url, packages, control) {
+  const request=async(route,body,token)=>{const r=await fetch(url+route,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json','X-API-Key':'studio-fixture-key','X-Runway-Task-Token':token??''},...(body===undefined?{}:{body:JSON.stringify(body)})});return{status:r.status,body:await r.json()}};
+  const personal=(await request('/api/v1/human-tasks/operators',{id:'onur',name:'Onur',roles:['finance']})).body.personalToken;assert.ok(personal);
+  assert.equal((await request('/api/v1/studio-queues/configure',{name:'HumanPreparations',profileId:'default',maxRetries:1,retryDelaySeconds:0,leaseSeconds:30})).status,200);
+  for (const pkg of packages) {
+    const created=await request('/api/v1/robot-jobs',{requestId:crypto.randomUUID(),robotId:'r1',workflowId:'human-'+pkg.version,version:pkg.version,packageId:pkg.definition.portablePackage.id,inputs:{}});assert.equal(created.status,202,JSON.stringify(created.body));
+    let view;await waitFor(async()=>{view=(await request('/api/v1/robot-jobs/'+created.body.jobId)).body.job;return view?.status==='waiting'||view?.status==='failed'},15000);assert.equal(view.status,'waiting',view.error);await waitFor(async()=>!(await(await fetch('http://127.0.0.1:'+process.env.RUNWAY_ROBOT_PORT+'/health')).json()).activeJob);
+    const task=view.waitingTask.id;assert.equal(control.calls().filter(v=>v==='log-message:BEFORE_HUMAN_'+pkg.version).length,1);
+    if(pkg.version==='14.0.0')await control.restart();
+    const expected=pkg.version==='14.0.0'?'Approved':pkg.version==='15.0.0'?'Rejected':pkg.version==='16.0.0'?'TimedOut':'Cancelled';
+    if(expected==='Cancelled'){assert.equal((await request('/api/v1/robot-jobs/'+view.jobId+'/stop',{})).status,200)}
+    else if(expected==='TimedOut'){await request('/fixture/control',{expireTask:task})}
+    else {const body={taskId:task,requestId:crypto.randomUUID(),decision:expected,fields:{costCenter:'FIN'},comment:'HTTP review'};assert.equal((await request('/api/v1/human-tasks/decide',body)).status,403);assert.equal((await request('/api/v1/human-tasks/decide',body,personal)).status,200);assert.equal((await request('/api/v1/human-tasks/decide',body,personal)).status,200)}
+    await waitFor(async()=>{view=(await request('/api/v1/robot-jobs/'+view.jobId)).body.job;return ['success','failed','stopped'].includes(view?.status)},20000);assert.equal(view.status,expected==='Cancelled'?'stopped':'success',view.error);
+    assert.equal(control.calls().filter(v=>v==='log-message:BEFORE_HUMAN_'+pkg.version).length,1);if(expected!=='Cancelled'){assert.equal(view.outputs.decision,expected);assert.ok(view.humanTasks.some(v=>v.phase==='resumed'&&v.decision===expected))}else assert.ok(!control.calls().some(v=>v.includes('AFTER_HUMAN_'+pkg.version)));
+    assert.ok(view.transactions.some(v=>v.queueName==='HumanPreparations'&&v.status==='successful'));assert.ok(!JSON.stringify(view).includes(personal));await waitFor(async()=>!(await(await fetch('http://127.0.0.1:'+process.env.RUNWAY_ROBOT_PORT+'/health')).json()).activeJob);
+  }
+  console.log('PASS Real Maestro/Robot human task create → durable wait → server restart → approval/reject/timeout/resume; Robot released, no earlier activity replay, cancellation and personal identity audit');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

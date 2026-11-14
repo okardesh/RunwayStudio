@@ -1,12 +1,15 @@
 import type { WorkflowArgument } from '../types';
 
-export type RobotJobStatus = 'queued' | 'running' | 'stopping' | 'stopped' | 'success' | 'failed';
+export type RobotJobStatus = 'queued' | 'running' | 'stopping' | 'waiting' | 'stopped' | 'success' | 'failed';
 export const jobIsTerminal = (status: RobotJobStatus) => ['stopped', 'success', 'failed'].includes(status);
 export interface RobotJobLog { sequence: number; timestamp: string; level: 'info' | 'error'; message: string }
 export interface RobotJobView {
   jobId: string; status: RobotJobStatus; startedAt: number; completedAt?: number;
   environment?: { id: string; name: string };
   transactions?: import('./queues').TransactionEvent[];
+  humanTasks?: import('./humanTasks').HumanTaskEvent[];
+  waitingTask?: { id: string; checkpointId: string };
+  resumeId?: string;
   logs: RobotJobLog[]; outputs?: unknown; error?: string;
   package?: { id: string; version: string };
   workflowCalls?: Array<{ name: string; depth: number; status: string }>;

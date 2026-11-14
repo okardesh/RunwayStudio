@@ -116,6 +116,14 @@ app.whenReady().then(() => {
     writeCredentials(credentials);
   });
 
+  ipcMain.handle('runway:human-tasks', async (_event, request: { url: string; apiKey: string; tenantId: string; method: 'GET' | 'POST'; payload?: unknown; personalToken?: string }) => {
+    try {
+      const url = new URL(request.url);
+      if (!['http:', 'https:'].includes(url.protocol) || !/^\/api\/v1\/human-tasks(?:\/(?:operators|decide))?$/.test(url.pathname) || !['GET','POST'].includes(request.method)) throw Error('Invalid task request.');
+      const response = await fetch(url, { method: request.method, redirect: 'error', signal: AbortSignal.timeout(12000), headers: { 'Content-Type': 'application/json', 'X-API-Key': request.apiKey, 'X-Tenant-Id': request.tenantId, 'X-Runway-Task-Token': request.personalToken ?? '' }, ...(request.payload === undefined ? {} : { body: JSON.stringify(request.payload) }) });
+      return { networkError: false, status: response.status, body: await response.text() };
+    } catch { return { networkError: true, status: 0, body: '' }; }
+  });
   ipcMain.handle('runway:studio-queues', async (_event, request: { url: string; apiKey: string; tenantId: string; method: 'GET' | 'POST'; payload?: unknown; sessionId?: string }) => {
     try {
       const url = new URL(request.url);

@@ -17,6 +17,7 @@ import { QueueRunSession, executeQueueActivity, queueActivities } from '../share
 import { createQueueSession } from './queuesClient';
 import { BusinessRuleException, TransactionScopeFailure, executeTransactionScope, resolveScopeValue } from '../shared/transactionScope';
 import type { UiTarget } from '../shared/uiTargets';
+import { humanActivities, createHumanTask, mockHumanResponse, validateHumanPlacement, validateHumanActivity } from '../shared/humanTasks';
 
 export type LogLevel = 'Info' | 'Warning' | 'Error' | 'Debug';
 export type LogFn = (text: string, level: LogLevel) => void;
@@ -221,6 +222,13 @@ async function executeWorkflowRecorded(
   let executionFailure: Error | undefined;
   try {
     if (frame.depth === 0 && nodes.some((n) => n.data.activityId === 'invoke-workflow' || n.data.activityId === 'transaction-scope' && n.data.properties.workflowFile)) session.graph = await loadWorkflowGraph({ projectName: currentFrame.projectName, nodes, edges, variables, arguments: debugOptions?.arguments ?? [] }, currentFrame.filePath, debugOptions?.loadWorkflow ?? loadInvokedWorkflow);
+    if (frame.depth === 0) {
+      const definitions = [{ nodes }, ...session.graph?.files.map(f => f.definition) ?? []]; validateHumanPlacement(definitions);
+      for (const d of definitions) for (const n of d.nodes) if (humanActivities.includes(n.data.activityId)) {
+        validateHumanActivity(n.data.activityId, n.data.properties);
+        if (!debugOptions?.debug) throw Error('Human tasks need durable Robot Jobs execution. Publish and launch through Jobs, or use Debug mock decisions.');
+      }
+    }
     const resolvedNodes = resolveTargetBindings(nodes, session.targets);
     const invoke = async (nodeId: string, properties: Record<string, unknown>, values: Record<string, unknown>, depth: number) => {
       const loaded = session.graph?.resolve(currentFrame.filePath, nodeId);
@@ -323,6 +331,12 @@ async function executeWorkflowCore(
   };
   const runWithValuesCore = async (activityId: string, properties: Record<string, unknown>) => {
     session.queues?.assertHealthy();
+    if (humanActivities.includes(activityId)) {
+      if (!debugOptions?.debug) throw Error('Run human tasks through Robot Jobs or Debug mock mode.');
+      if (activityId === 'create-human-task') { const task = await createHumanTask(currentNodeId!, properties, values, trace.secrets); trace.human({ taskId: task.id, phase: 'debug-created', at: Date.now() }); }
+      else { if (session.queues?.activeCount) throw Error('Finish all transactions before waiting for human input.'); const id = mockHumanResponse(properties, values); trace.human({ taskId: id, phase: 'debug-response', decision: String(properties.debugDecision ?? 'Approved'), at: Date.now() }); }
+      onLog('Human task simulated for Debug. No approval was created or submitted.', 'Info'); return true;
+    }
     if (activityId === 'business-rule-exception') throw new BusinessRuleException(String(resolveScopeValue(properties.message ?? 'Business rule was not satisfied.', values)));
     if (activityId === 'transaction-scope') {
       const node = nodes.find(n => n.id === currentNodeId)!;

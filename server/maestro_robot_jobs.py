@@ -13,10 +13,11 @@ from urllib.request import Request, build_opener, HTTPRedirectHandler
 from urllib.parse import urlsplit, urlunsplit
 import maestro_assets
 import maestro_queues
+import maestro_human_tasks
 
 BASE = '/api/v1/robot-jobs'
 TERMINAL = {'success', 'failed', 'stopped'}
-STATES = TERMINAL | {'queued', 'running', 'stopping'}
+STATES = TERMINAL | {'queued', 'running', 'stopping', 'waiting'}
 SENSITIVE = re.compile(r'password|secret|token|api.?key|credential|authorization', re.I)
 
 
@@ -162,6 +163,7 @@ def _save(host, tenant, job):
         if previous.get('environment'):
             job['environment'] = previous['environment']
         if job['status'] in TERMINAL:
+            maestro_human_tasks.finish(conn, tenant, job['jobId'])
             recovered = maestro_queues.release_owner(conn, tenant, 'job:' + job['jobId'])
             for item in recovered:
                 job.setdefault('transactions', []).append({'itemId': item['id'], 'queueName': item['queueName'], 'reference': item['reference'], 'attempt': item['attempt'], 'status': item['status'], 'errorType': item['errorType'], 'reason': item['reason'], 'at': int(time.time() * 1000)})
@@ -188,6 +190,8 @@ def _callback_base(handler, host):
 
 
 def handle(handler, method, parsed, host):
+    maestro_human_tasks.start(host, _call, _save)
+    if maestro_human_tasks.handle(handler, method, parsed, host): return True
     if maestro_queues.handle(handler, method, parsed, host):
         return True
     if maestro_assets.handle(handler, method, parsed, host):
@@ -196,6 +200,15 @@ def handle(handler, method, parsed, host):
         return False
     respond = handler._respond
     try:
+        human_match = re.fullmatch(BASE + r'/([a-zA-Z0-9_-]{1,120})/human/create', parsed.path)
+        if method == 'POST' and human_match:
+            job_id = human_match[1]
+            grant = maestro_assets.authorize_job(host, job_id, handler.headers.get('X-Runway-Job-Token', ''))
+            with _db(host) as conn: bot_id = conn.execute('SELECT bot_id FROM studio_robot_jobs WHERE id=?', (job_id,)).fetchone()[0]
+            row = _bot(host, grant['tenant'], bot_id)
+            if not hmac.compare_digest(handler.headers.get('X-API-Key', ''), str(row[10] or host['_get_active_api_key']())): raise ValueError('Unauthorized Robot.')
+            task = maestro_human_tasks.create(host, grant['tenant'], job_id, handler._read_json_body() or {})
+            respond(200, {'ok': True, 'task': task}); return True
         queue_match = re.fullmatch(BASE + r'/([a-zA-Z0-9_-]{1,120})/queues/operate', parsed.path)
         if method == 'POST' and queue_match:
             job_id = queue_match[1]
@@ -240,8 +253,10 @@ def handle(handler, method, parsed, host):
                 return True
             payload = handler._read_json_body() or {}
             job = payload.get('job')
-            if not _valid_view(job, match[1]) or job['status'] not in TERMINAL:
+            if not _valid_view(job, match[1]) or job['status'] not in (*TERMINAL, 'waiting'):
                 raise ValueError('Invalid completion snapshot. Update Robot to the Robot Jobs build.')
+            if job['status'] == 'waiting':
+                respond(200, {'ok': True, 'job': maestro_human_tasks.save_wait(host, ticket[0], _masked(job), payload.get('checkpoint'))}); return True
             respond(200, {'ok': True, 'job': _save(host, ticket[0], job)})
             return True
         if not host['_is_valid_api_key'](handler.headers.get('X-API-Key', '').strip()):
@@ -272,6 +287,7 @@ def handle(handler, method, parsed, host):
             fingerprint = hashlib.sha256(json.dumps(data, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
             with maestro_queues.database(host, tenant):
                 pass
+            with maestro_human_tasks.database(host): pass
             # Durable reservation is made before network dispatch, with a unique tenant/request key.
             with _db(host) as conn:
                 conn.execute('BEGIN IMMEDIATE')
@@ -297,6 +313,7 @@ def handle(handler, method, parsed, host):
                 conn.execute('INSERT INTO studio_robot_jobs VALUES (?,?,?,?,?,?,?,?,?)', (job_id, tenant, data['requestId'], fingerprint, bot_id, item['id'], item['version'], manifest['id'], json.dumps(view)))
                 maestro_assets.save_grant(conn, tenant, selected['id'], refs, asset_token, job_id)
                 maestro_queues.prepare_grant(conn, tenant, selected['id'], item['definition'], job_id)
+                maestro_human_tasks.register(conn, tenant, job_id, item['definition'], _callback_base(handler, host) + BASE + '/' + job_id + '/complete')
                 conn.execute('''INSERT INTO rpa_jobs (id,organization_id,workflow_id,workflow_name,workflow_version,bot_id,status,inputs,created_at)
                                 VALUES (?,?,?,?,?,?,?,?,?)''', (job_id, tenant, item['id'], item['name'], item['version'], bot_id, 'queued', json.dumps(_masked(data['inputs'])), now))
             # Packaged Maestro advertises loopback to its own UI. Remote Robots need the
@@ -316,6 +333,13 @@ def handle(handler, method, parsed, host):
                 respond(404, {'ok': False, 'error': 'Job not found.'})
                 return True
             view = json.loads(ticket[1])
+            if method == 'POST' and match[2] == '/stop':
+                managed = maestro_human_tasks.request_stop(host, tenant, match[1])
+                if managed:
+                    try: managed = _save(host, tenant, _call(host, tenant, ticket[0], 'POST', '/' + match[1] + '/stop')['job'])
+                    except Exception: pass
+                    respond(200, {'ok': True, 'job': managed}); return True
+            if view['status'] == 'waiting': respond(200, {'ok': True, 'job': view}); return True
             if view['status'] not in TERMINAL:
                 view = _call(host, tenant, ticket[0], method, '/' + match[1] + (match[2] or '' )).get('job')
                 if not _valid_view(view, match[1]):
