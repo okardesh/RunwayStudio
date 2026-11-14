@@ -10,6 +10,8 @@ import { evaluateBreakpointCondition } from './breakpointCondition';
 import type { TestExecution } from '../shared/workflowTests';
 import { argumentValue, cloneArgument, initializeArguments, loadWorkflowGraph, resolveArgumentInput, type WorkflowGraph, type WorkflowLoader } from '../shared/invokedWorkflows';
 import { loadInvokedWorkflow } from './workflowLoader';
+import { executeAssetActivity, protectDerivedValues, type AssetResolver } from '../shared/assets';
+import { assetRunContext } from '../store/assetsStore';
 import type { UiTarget } from '../shared/uiTargets';
 
 export type LogLevel = 'Info' | 'Warning' | 'Error' | 'Debug';
@@ -163,6 +165,7 @@ function resolveCollectionValue(value: unknown, values: Record<string, unknown>)
 }
 
 export interface DebugOptions {
+  assetContext?: { resolve?: AssetResolver; environment?: { id: string; name: string } };
   arguments?: WorkflowArgument[];
   loadWorkflow?: WorkflowLoader;
   initialValues?: Record<string, unknown>;
@@ -176,13 +179,14 @@ export interface DebugOptions {
   onResume?: () => void;
 }
 
-interface ExecutionSession { graph?: WorkflowGraph; targets: UiTarget[]; frames: DebugFrame[]; rootRunId?: string; step: 'run' | StepMode; stepOverDepth: number }
+interface ExecutionSession { assets?: AssetResolver; environment?: { id: string; name: string }; graph?: WorkflowGraph; targets: UiTarget[]; frames: DebugFrame[]; rootRunId?: string; step: 'run' | StepMode; stepOverDepth: number }
 interface ExecutionFrame { depth: number; parentRunId?: string; invocationNodeId?: string; inheritedSecrets?: string[] }
 interface ExecutionResult { status: 'completed' | 'stopped' | 'error'; values: Record<string, unknown>; secrets: string[] }
 export async function executeWorkflow(nodes: Node<WorkflowNodeData>[], edges: Edge[], variables: WorkflowVariable[], onNodeStart: (id: string) => void, onNodeEnd: (id: string) => void, onLog: LogFn, options?: DebugOptions): Promise<'completed' | 'stopped' | 'error'> {
   if (_executing) throw Error('Another workflow is already running. Stop it before starting a new run.');
   _executing = true; _stopRequested = false;
-  const session: ExecutionSession = { targets: JSON.parse(JSON.stringify(useUiTargetStore.getState().targets)), frames: [], step: 'run', stepOverDepth: 0 };
+  const assets = options?.assetContext ?? assetRunContext();
+  const session: ExecutionSession = { assets: assets.resolve, environment: assets.environment, targets: JSON.parse(JSON.stringify(useUiTargetStore.getState().targets)), frames: [], step: 'run', stepOverDepth: 0 };
   try { return (await executeWorkflowRecorded(nodes, edges, variables, onNodeStart, onNodeEnd, onLog, options, session, { depth: 0 })).status; }
   finally { _executing = false; _resumeResolver = null; useDebugStore.setState({ frames: [] }); }
 }
@@ -198,7 +202,8 @@ async function executeWorkflowRecorded(
   session: ExecutionSession,
   frame: ExecutionFrame
 ): Promise<ExecutionResult> {
-  const trace = createExecutionTrace(nodes, variables, { ...debugOptions, ...frame, callDepth: session.frames.length, rootRunId: session.rootRunId });
+  const trace = createExecutionTrace(nodes, variables, { ...debugOptions, ...frame, environment: session.environment, callDepth: session.frames.length, rootRunId: session.rootRunId });
+  const protectedLog: LogFn = (text, level) => { let safe = text; for (const secret of [...trace.secrets].sort((a, b) => b.length - a.length)) if (secret) safe = safe.split(secret).join('[REDACTED]'); onLog(safe, level); };
   session.rootRunId ??= trace.runId;
   const live = debugOptions?.debug ? createLiveDebugger(debugOptions.projectName || 'Workflow', nodes, [...variables, ...(debugOptions.arguments ?? []).map((a) => ({ ...a, scope: `Argument (${a.direction})` }))], frame.depth === 0, trace.secrets) : undefined;
   if (!live && frame.depth === 0) useDebugStore.getState().clearSession();
@@ -221,7 +226,7 @@ async function executeWorkflowRecorded(
       }
       const child = loaded.definition;
       for (const target of child.uiTargets ?? []) if (!session.targets.some((t) => t.id === target.id)) session.targets.push(JSON.parse(JSON.stringify(target)));
-      const result = await executeWorkflowRecorded(JSON.parse(JSON.stringify(child.nodes)), child.edges, JSON.parse(JSON.stringify(child.variables)), () => {}, () => {}, onLog,
+      const result = await executeWorkflowRecorded(JSON.parse(JSON.stringify(child.nodes)), child.edges, JSON.parse(JSON.stringify(child.variables)), () => {}, () => {}, protectedLog,
         { ...debugOptions, projectName: child.projectName, filePath: loaded.path, arguments: child.arguments, initialValues: provided, test: undefined, hasBreakpoint: undefined, getBreakpoint: undefined }, session,
         { depth: depth + 1, parentRunId: trace.runId, invocationNodeId: nodeId, inheritedSecrets: trace.secrets });
       for (const secret of result.secrets) if (!trace.secrets.includes(secret)) trace.secrets.push(secret);
@@ -235,7 +240,7 @@ async function executeWorkflowRecorded(
       for (const [name, value] of Object.entries(outputs)) Object.defineProperty(values, name, { value, writable: true, configurable: true, enumerable: true });
       return true;
     };
-    let result = await executeWorkflowCore(resolvedNodes, edges, variables, onNodeStart, onNodeEnd, onLog, trace, debugOptions, live, session, frame.depth, publishFrame, invoke, (values) => { finalValues = values; });
+    let result = await executeWorkflowCore(resolvedNodes, edges, variables, onNodeStart, onNodeEnd, protectedLog, trace, debugOptions, live, session, frame.depth, publishFrame, invoke, (values) => { finalValues = values; });
     if (_stopRequested) result = 'stopped';
     if (result === 'completed') for (const arg of debugOptions?.arguments ?? []) if (arg.direction === 'Out') {
       try { finalValues[arg.name] = argumentValue(finalValues[arg.name], arg.type); } catch { throw Error(`Output argument "${arg.name}" does not match its declared ${arg.type} type.`); }
@@ -246,7 +251,7 @@ async function executeWorkflowRecorded(
   } catch (error) {
     const status = _stopRequested ? 'stopped' : 'error';
     if (frame.depth === 0) live?.finish(status);
-    if (!_stopRequested) onLog(error instanceof Error ? error.message : String(error), 'Error');
+    if (!_stopRequested) protectedLog(error instanceof Error ? error.message : String(error), 'Error');
     await trace.finish(status, _stopRequested ? undefined : error);
     return { status, values: {}, secrets: trace.secrets };
   } finally { session.frames.pop(); }
@@ -282,6 +287,7 @@ async function executeWorkflowCore(
   const runWithValues = async (activityId: string, properties: Record<string, unknown>) => {
     const inputs = resolveProperties(properties, values);
     if (activityId === 'log-message') inputs.message = resolveLogMessage(properties.message, values);
+    protectDerivedValues(properties, inputs, values, trace.secrets, v => { if (!trace.secrets.includes(v)) trace.secrets.push(v); });
     trace.inputs(inputs);
     let success = false;
     try { success = activityId === 'invoke-workflow' ? await invoke(currentNodeId!, properties, values, currentDepth) : await runWithValuesCore(activityId, properties); }
@@ -292,6 +298,13 @@ async function executeWorkflowCore(
     return success;
   };
   const runWithValuesCore = async (activityId: string, properties: Record<string, unknown>) => {
+    if (activityId === 'get-asset' || activityId === 'get-credential') {
+      const outputs = await executeAssetActivity(activityId, properties, session.assets, value => { if (!trace.secrets.includes(value)) trace.secrets.push(value); });
+      if (_stopRequested) return false;
+      Object.assign(values, outputs);
+      onLog('Read central ' + (activityId === 'get-credential' ? 'credential' : 'asset') + ' from the selected environment.', 'Info');
+      return true;
+    }
     if (activityId === 'create-list') {
       const output = getCollectionVariableName(properties.output);
       if (!output) return false;
@@ -325,6 +338,7 @@ async function executeWorkflowCore(
     const resolvedProperties = resolveProperties(properties, values);
     if (activityId === 'assign' && typeof properties.value === 'string' && /^\s*\{\{[^{}]+\}\}\s*$/.test(properties.value)) resolvedProperties.value = resolveArgumentInput(properties.value, values).value;
     if (activityId === 'log-message') resolvedProperties.message = resolveLogMessage(properties.message, values);
+    protectDerivedValues(properties, resolvedProperties, values, trace.secrets, v => { if (!trace.secrets.includes(v)) trace.secrets.push(v); });
     if (activityId === 'write-csv') {
       resolvedProperties.data = resolveCollectionValue(properties.data, values);
     }

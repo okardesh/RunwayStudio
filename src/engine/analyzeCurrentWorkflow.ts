@@ -3,10 +3,12 @@ import { useUiTargetStore } from '../store/uiTargetStore';
 import { useWorkflowAnalyzerStore } from '../store/workflowAnalyzerStore';
 import { useUiStore } from '../store/uiStore';
 import { analyzeInvocations } from './analyzeInvocations';
+import { useAssetsStore } from '../store/assetsStore';
 
 export function analyzeCurrentWorkflow() {
   const workflow = useWorkflowStore.getState();
-  const source = { ...workflow, targets: useUiTargetStore.getState().targets };
+  const assets = useAssetsStore.getState();
+  const source = { ...workflow, targets: useUiTargetStore.getState().targets, assets: assets.connection ? { profileId: assets.selectedProfileId, catalog: assets.catalog } : undefined };
   let report = useWorkflowAnalyzerStore.getState().analyze(source);
   useUiStore.setState({ activeBottomPanelTab: 'errors', analyzerNodeId: null });
   if (workflow.nodes.some((n) => n.data.activityId === 'invoke-workflow')) {

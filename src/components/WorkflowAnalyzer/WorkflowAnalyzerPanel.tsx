@@ -7,15 +7,17 @@ import { analysisSignature, type AnalysisFinding, type FindingSeverity } from '.
 import { analyzeCurrentWorkflow } from '../../engine/analyzeCurrentWorkflow';
 import { Icon } from '../Icon';
 import './WorkflowAnalyzerPanel.css';
+import { useAssetsStore } from '../../store/assetsStore';
 
 export function WorkflowAnalyzerPanel() {
   const { nodes, edges, variables, arguments: args, projectName, filePath } = useWorkflowStore();
   const targets = useUiTargetStore((s) => s.targets);
+  const { connection, catalog, selectedProfileId } = useAssetsStore();
   const report = useWorkflowAnalyzerStore((s) => s.report);
   const [filter, setFilter] = useState<'all' | FindingSeverity>('all');
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const signature = useMemo(() => analysisSignature({ nodes, edges, variables, arguments: args, targets, projectName, filePath }), [nodes, edges, variables, args, targets, projectName, filePath]);
+  const signature = useMemo(() => analysisSignature({ nodes, edges, variables, arguments: args, targets, projectName, filePath, assets: connection ? { profileId: selectedProfileId, catalog } : undefined }), [nodes, edges, variables, args, targets, projectName, filePath, connection, catalog, selectedProfileId]);
   const stale = !!report && report.signature !== signature;
   const findings = report?.findings ?? [];
   const counts = { error: findings.filter((f) => f.severity === 'error').length, warning: findings.filter((f) => f.severity === 'warning').length, info: findings.filter((f) => f.severity === 'info').length };

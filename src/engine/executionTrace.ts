@@ -3,17 +3,18 @@ import type { WorkflowArgument, WorkflowNodeData, WorkflowVariable } from '../ty
 import { snapshot, useExecutionHistoryStore, type ExecutionRun, type ExecutionStep } from '../store/executionHistoryStore';
 import { assertTestValues, type TestExecution } from '../shared/workflowTests';
 
-export function createExecutionTrace(nodes: Node<WorkflowNodeData>[], variables: WorkflowVariable[], meta?: { projectName?: string; filePath?: string | null; debug?: boolean; test?: TestExecution; parentRunId?: string; rootRunId?: string; invocationNodeId?: string; callDepth?: number; arguments?: WorkflowArgument[]; inheritedSecrets?: string[] }) {
+export function createExecutionTrace(nodes: Node<WorkflowNodeData>[], variables: WorkflowVariable[], meta?: { environment?: { id: string; name: string }; projectName?: string; filePath?: string | null; debug?: boolean; test?: TestExecution; parentRunId?: string; rootRunId?: string; invocationNodeId?: string; callDepth?: number; arguments?: WorkflowArgument[]; inheritedSecrets?: string[] }) {
   const run: ExecutionRun = {
     id: crypto.randomUUID(), projectName: meta?.projectName || 'Workflow', filePath: meta?.filePath ?? null,
     startedAt: Date.now(), status: 'running', debug: !!meta?.debug, steps: [],
   };
+  if (meta?.environment) run.environment = meta.environment;
   if (meta?.parentRunId) { run.parentRunId = meta.parentRunId; run.rootRunId = meta.rootRunId; run.invocationNodeId = meta.invocationNodeId; run.callDepth = meta.callDepth; }
   if (meta?.test) { const { expected: _expected, ...identity } = meta.test; run.test = { ...identity, status: 'running', assertions: [] }; }
   let runtimeValues: Record<string, unknown> = {};
   const secrets = [...(meta?.inheritedSecrets ?? []), ...variables.filter((v) => /password|secret|token|api.?key|credential/i.test(v.name)).map((v) => String(v.defaultValue)).filter(Boolean)];
   for (const node of nodes) for (const [key, value] of Object.entries(node.data.properties)) {
-    if (/password|secret|token|api.?key|credential|authorization/i.test(key) && typeof value === 'string' && !value.includes('{{')) secrets.push(value);
+    if (!['usernameOutput', 'passwordOutput'].includes(key) && /password|secret|token|api.?key|credential|authorization/i.test(key) && typeof value === 'string' && !value.includes('{{')) secrets.push(value);
   }
   const clean = (value: unknown) => {
     const result = snapshot(value, secrets);
@@ -21,9 +22,9 @@ export function createExecutionTrace(nodes: Node<WorkflowNodeData>[], variables:
     return json && json.length > 8000 ? json.slice(0, 8000) + '… [Snapshot limit]' : result;
   };
   const active = new Map<string, ExecutionStep>();
-  const collectSecrets = (values: Record<string, unknown>) => {
+  const collectSecrets = (values: Record<string, unknown>, properties = false) => {
     for (const [key, value] of Object.entries(values)) {
-      if (/password|secret|token|api.?key|credential|authorization/i.test(key) && typeof value === 'string' && value && !secrets.includes(value)) secrets.push(value);
+      if (!(properties && ['usernameOutput', 'passwordOutput'].includes(key)) && /password|secret|token|api.?key|credential|authorization/i.test(key) && typeof value === 'string' && value && !secrets.includes(value)) secrets.push(value);
     }
   };
   let touched: ExecutionStep | undefined;
@@ -58,7 +59,7 @@ export function createExecutionTrace(nodes: Node<WorkflowNodeData>[], variables:
       touched = step; active.delete(id); publish();
     },
     inputs(properties: Record<string, unknown>) {
-      collectSecrets(properties);
+      collectSecrets(properties, true);
       if (touched) touched.inputs = clean(properties);
     },
     outputs(values: Record<string, unknown>) {
@@ -71,6 +72,7 @@ export function createExecutionTrace(nodes: Node<WorkflowNodeData>[], variables:
     async captureFailure() {
       const step = touched;
       if (!step || step.screenshot || step.screenshotNote) return;
+      if (secrets.length) { step.screenshotNote = 'Screenshot omitted because this run used protected values.'; return; }
       if (!useExecutionHistoryStore.getState().captureScreenshots) { step.screenshotNote = 'Screenshot capture was disabled.'; return; }
       if (screenshots >= 3) { step.screenshotNote = 'Screenshot limit reached (3 per run).'; return; }
       const capture = (window as any).electronAPI?.captureFailureScreenshot;

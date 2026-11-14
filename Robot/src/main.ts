@@ -8,6 +8,7 @@ import { executeActivity } from '../../electron/automation/index.js';
 import type { RobotWorkflowResult } from './workflowRuntime';
 import { RobotJobRegistry, type RobotTrigger } from './jobRegistry';
 import type { RobotJobView } from '../../src/shared/robotJobs';
+import { robotAssetResolver } from './assetsClient';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.join(__dirname, '..');
@@ -41,7 +42,7 @@ const jobs = new RobotJobRegistry(executeActivity, async (trigger, view, result)
   await report(trigger, view.status as 'success' | 'failed' | 'stopped', view.logs, view.error, result, view);
   refreshTray();
   new Notification({ title: 'Runway Robot', body: `Job ${view.jobId}: ${view.status}` }).show();
-});
+}, (trigger, signal) => connection ? robotAssetResolver(trigger, connection.serverUrl, connection.apiKey, signal) : undefined);
 let connection: { serverUrl: string; apiKey: string; deviceName: string } | null = null;
 
 function logoPath() {
@@ -147,7 +148,7 @@ async function report(trigger: Trigger, status: 'success' | 'failed' | 'stopped'
     const response = await fetch(callbackUrl, {
       method: 'POST', redirect: 'error', signal: AbortSignal.timeout(12000),
       headers: { 'Content-Type': 'application/json', 'X-API-Key': connection.apiKey, 'X-Tenant-Id': ORGANIZATION_ID },
-      body: JSON.stringify({ jobId: trigger.jobId, workflowId: trigger.workflowId, status, logs, error, ...(view ? { job: view } : {}), ...(result ? { outputs: result.outputs, package: result.package, workflowCalls: result.calls } : {}), completedAt: new Date().toISOString(), apiKey: connection.apiKey }),
+      body: JSON.stringify({ jobId: trigger.jobId, workflowId: trigger.workflowId, status, logs, error, ...(view ? { job: view } : {}), ...(result ? { outputs: trigger.assetContext ? view?.outputs : result.outputs, package: result.package, workflowCalls: result.calls } : {}), completedAt: new Date().toISOString(), apiKey: connection.apiKey }),
     });
     if (!response.ok) throw Error(`Runway callback returned HTTP ${response.status}.`);
   } catch (reason) {

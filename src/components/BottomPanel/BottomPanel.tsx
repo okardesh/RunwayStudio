@@ -10,6 +10,7 @@ import { DebugPanel } from '../DebugPanel/DebugPanel';
 import { TestExplorer } from '../TestExplorer/TestExplorer';
 import { WorkflowAnalyzerPanel } from '../WorkflowAnalyzer/WorkflowAnalyzerPanel';
 
+import { AssetsPanel } from '../Assets/AssetsPanel';
 import { RobotJobsPanel } from '../RobotJobs/RobotJobsPanel';
 import type { RunwayConnection } from '../../engine/runwayConnection';
 
@@ -133,6 +134,7 @@ export function BottomPanel({ connection = null }: { connection?: RunwayConnecti
   const mainTabs = [
     { id: 'dataManager' as BottomPanelTab, label: 'Data Manager' },
     { id: 'output' as BottomPanelTab, label: 'Output' },
+    { id: 'assets' as BottomPanelTab, label: 'Assets' },
     { id: 'jobs' as BottomPanelTab, label: 'Robot Jobs' },
     { id: 'history' as BottomPanelTab, label: 'Run History' },
     { id: 'targets' as BottomPanelTab, label: 'UI Targets' },
@@ -150,7 +152,7 @@ export function BottomPanel({ connection = null }: { connection?: RunwayConnecti
   ];
 
   return (
-    <div className={`bottom-panel${mainTab === 'jobs' ? ' bottom-panel--jobs' : mainTab === 'history' ? ' bottom-panel--history' : mainTab === 'targets' ? ' bottom-panel--targets' : mainTab === 'debug' ? ' bottom-panel--debug' : mainTab === 'tests' ? ' bottom-panel--tests' : mainTab === 'errors' ? ' bottom-panel--analyzer' : ''}`}>
+    <div className={`bottom-panel${mainTab === 'assets' ? ' bottom-panel--assets' : mainTab === 'jobs' ? ' bottom-panel--jobs' : mainTab === 'history' ? ' bottom-panel--history' : mainTab === 'targets' ? ' bottom-panel--targets' : mainTab === 'debug' ? ' bottom-panel--debug' : mainTab === 'tests' ? ' bottom-panel--tests' : mainTab === 'errors' ? ' bottom-panel--analyzer' : ''}`}>
       <div className="bp__tab-row">
         <div className="bp__main-tabs">
           {mainTabs.map(({ id, label }) => (
@@ -159,7 +161,7 @@ export function BottomPanel({ connection = null }: { connection?: RunwayConnecti
               className={`bp__main-tab${mainTab === id ? ' bp__main-tab--active' : ''}`}
               onClick={() => setActiveBottomPanelTab(id)}
             >
-              <Icon name={({ dataManager: 'data', output: 'terminal', history: 'history', jobs: 'play', targets: 'cursor', debug: 'code', tests: 'shield', markers: 'layers', errors: 'alert' } as Record<BottomPanelTab, IconName>)[id]} size={14} />{label}
+              <Icon name={({ dataManager: 'data', output: 'terminal', history: 'history', jobs: 'play', assets: 'shield', targets: 'cursor', debug: 'code', tests: 'shield', markers: 'layers', errors: 'alert' } as Record<BottomPanelTab, IconName>)[id]} size={14} />{label}
             </button>
           ))}
         </div>
@@ -181,6 +183,7 @@ export function BottomPanel({ connection = null }: { connection?: RunwayConnecti
 
       <div className="bp__content">
         <div hidden={mainTab !== 'jobs'} style={{ height: '100%', minHeight: 0 }}><RobotJobsPanel connection={connection} /></div>
+        <div hidden={mainTab !== 'assets'} style={{ height: '100%', minHeight: 0 }}><AssetsPanel /></div>
         {mainTab === 'history' && <RunHistoryPanel />}
         <div hidden={mainTab !== 'errors'} style={{ height: '100%', minHeight: 0 }}><WorkflowAnalyzerPanel /></div>
         <div hidden={mainTab !== 'debug'} style={{ height: '100%', minHeight: 0 }}><DebugPanel /></div>

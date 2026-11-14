@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 from urllib.parse import urlsplit, urlunsplit
+import maestro_assets
 
 BASE = '/api/v1/robot-jobs'
 TERMINAL = {'success', 'failed', 'stopped'}
@@ -156,6 +157,8 @@ def _save(host, tenant, job):
         previous = json.loads(previous[0])
         if previous['status'] in TERMINAL:
             return previous
+        if previous.get('environment'):
+            job['environment'] = previous['environment']
         conn.execute('UPDATE studio_robot_jobs SET snapshot=? WHERE id=? AND organization_id=?', (json.dumps(job), job['jobId'], tenant))
         conn.execute('''UPDATE rpa_jobs SET status=?, outputs=?, log=?, error=?, started_at=?, completed_at=?
                         WHERE id=? AND organization_id=?''', (job['status'], json.dumps(job.get('outputs', {})), json.dumps(job['logs']), job.get('error', ''), job['startedAt'], job.get('completedAt'), job['jobId'], tenant))
@@ -179,10 +182,26 @@ def _callback_base(handler, host):
 
 
 def handle(handler, method, parsed, host):
+    if maestro_assets.handle(handler, method, parsed, host):
+        return True
     if parsed.path != BASE and not parsed.path.startswith(BASE + '/'):
         return False
     respond = handler._respond
     try:
+        asset_match = re.fullmatch(BASE + r'/([a-zA-Z0-9_-]{1,120})/assets/resolve', parsed.path)
+        if method == 'POST' and asset_match:
+            with _db(host) as conn:
+                ticket = conn.execute('SELECT organization_id,bot_id FROM studio_robot_jobs WHERE id=?', (asset_match[1],)).fetchone()
+            if not ticket:
+                raise ValueError('Job not found.')
+            row = _bot(host, ticket[0], ticket[1])
+            if not hmac.compare_digest(handler.headers.get('X-API-Key', ''), str(row[10] or host['_get_active_api_key']())):
+                handler._respond(401, {'ok': False, 'error': 'Unauthorized Robot.'})
+                return True
+            data = handler._read_json_body() or {}
+            value = maestro_assets.resolve_job(host, asset_match[1], handler.headers.get('X-Runway-Job-Token', ''), data.get('name'), data.get('type'))
+            respond(200, {'ok': True, 'asset': value})
+            return True
         match = re.fullmatch(BASE + r'/([a-zA-Z0-9_-]{1,120})(/stop|/complete)?', parsed.path)
         # Completion is authenticated against the Robot registration for this exact job.
         if method == 'POST' and match and match[2] == '/complete':
@@ -214,10 +233,12 @@ def handle(handler, method, parsed, host):
             for item in host['_list_rpa_workflows'](tenant):
                 try:
                     manifest, args = _portable(item)
-                    packages.append({'workflowId': item['id'], 'name': item['name'], 'version': item['version'], 'packageId': manifest['id'], 'inputArguments': args})
+                    packages.append({'workflowId': item['id'], 'name': item['name'], 'version': item['version'], 'packageId': manifest['id'], 'inputArguments': args, 'requiredAssets': maestro_assets.requirements(item['definition'])})
                 except (ValueError, TypeError, AttributeError):
                     continue
-            respond(200, {'ok': True, 'schemaVersion': 1, 'packages': packages, 'robots': [
+            with maestro_assets.database(host, tenant) as conn:
+                environments = [{'id': r[0], 'name': r[1], 'enabled': bool(r[2])} for r in conn.execute('SELECT id,name,enabled FROM studio_asset_profiles WHERE tenant=?', (tenant,))]
+            respond(200, {'ok': True, 'schemaVersion': 1, 'packages': packages, 'environments': environments, 'robots': [
                 {'id': r['deviceName'], 'name': r['deviceName'], 'online': bool(r.get('isActive') and r.get('listenerUrl'))}
                 for r in robots if r.get('clientType') == 'robot']})
             return True
@@ -226,6 +247,8 @@ def handle(handler, method, parsed, host):
             if not isinstance(data, dict) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,120}', str(data.get('requestId', ''))):
                 raise ValueError('Invalid request ID.')
             fingerprint = hashlib.sha256(json.dumps(data, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+            with maestro_assets.database(host, tenant):
+                pass
             # Durable reservation is made before network dispatch, with a unique tenant/request key.
             with _db(host) as conn:
                 conn.execute('BEGIN IMMEDIATE')
@@ -246,15 +269,17 @@ def handle(handler, method, parsed, host):
                     raise ValueError('Package changed. Refresh the catalog.')
                 _inputs(data.get('inputs'), args)
                 job_id, now = str(uuid.uuid4()), int(time.time() * 1000)
-                view = {'jobId': job_id, 'status': 'queued', 'startedAt': now, 'logs': []}
+                selected, refs, asset_token = maestro_assets.prepare_grant(host, tenant, data.get('environmentId', 'default'), item['definition'], job_id, conn)
+                view = {'jobId': job_id, 'status': 'queued', 'startedAt': now, 'logs': [], 'environment': selected}
                 conn.execute('INSERT INTO studio_robot_jobs VALUES (?,?,?,?,?,?,?,?,?)', (job_id, tenant, data['requestId'], fingerprint, bot_id, item['id'], item['version'], manifest['id'], json.dumps(view)))
+                maestro_assets.save_grant(conn, tenant, selected['id'], refs, asset_token, job_id)
                 conn.execute('''INSERT INTO rpa_jobs (id,organization_id,workflow_id,workflow_name,workflow_version,bot_id,status,inputs,created_at)
                                 VALUES (?,?,?,?,?,?,?,?,?)''', (job_id, tenant, item['id'], item['name'], item['version'], bot_id, 'queued', json.dumps(_masked(data['inputs'])), now))
             # Packaged Maestro advertises loopback to its own UI. Remote Robots need the
             # reachable origin used by Studio, rather than the Mac's loopback address.
             callback_base = _callback_base(handler, host)
             try:
-                _call(host, tenant, bot_id, 'POST', payload={'jobId': job_id, 'workflowId': item['id'], 'definition': item['definition'], 'inputs': data['inputs'], 'callbackUrl': callback_base + BASE + '/' + job_id + '/complete'})
+                _call(host, tenant, bot_id, 'POST', payload={'jobId': job_id, 'workflowId': item['id'], 'definition': item['definition'], 'inputs': data['inputs'], 'callbackUrl': callback_base + BASE + '/' + job_id + '/complete', 'environment': selected, 'assetContext': {'serverUrl': callback_base, 'jobId': job_id, 'token': asset_token}})
             except Exception:
                 # No retry: Robot might have accepted before the connection was lost.
                 pass

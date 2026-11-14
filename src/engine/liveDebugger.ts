@@ -2,6 +2,7 @@ import type { Node } from 'reactflow';
 import type { WorkflowNodeData, WorkflowVariable } from '../types';
 import { useDebugStore, type DebugLocal, type WatchResult } from '../store/debugStore';
 import { debugValue, evaluateWatchExpression, sensitiveName } from './watchExpressions';
+import { containsProtectedValue } from '../shared/assets';
 
 export function createLiveDebugger(projectName: string, nodes: Node<WorkflowNodeData>[], variables: WorkflowVariable[], begin = true, inheritedSecrets: string[] = []) {
   if (begin) useDebugStore.getState().begin(projectName);
@@ -37,6 +38,8 @@ export function createLiveDebugger(projectName: string, nodes: Node<WorkflowNode
       const evaluate = (expression: string): WatchResult => {
         // Sensitive roots and member names are masked before any member evaluation.
         if (sensitiveName.test(expression)) return { expression, value: debugValue(undefined, [], true) };
+        const root = expression.trim().match(/^([A-Za-z_]\w*)/)?.[1];
+        if (root && containsProtectedValue(values[root], secrets)) return { expression, value: debugValue(undefined, [], true) };
         const result = evaluateWatchExpression(expression, values);
         return result.error ? { expression, error: result.error } : { expression, value: debugValue(result.value, secrets) };
       };

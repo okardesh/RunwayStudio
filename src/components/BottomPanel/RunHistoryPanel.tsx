@@ -67,6 +67,7 @@ export function RunHistoryPanel() {
           </button>)}
         </section>
         <section className="rh-detail" aria-label="Activity details">
+          {run.environment && <div className="rh-notice">Environment: {run.environment.name}</div>}
           {run.robotJob && <RobotJobDetails job={run.robotJob} />}
           {(run.parentRunId || children.length > 0) && <div className="rh-call-links" aria-label="Workflow call links">{run.parentRunId && <button disabled={!parentRun} onClick={() => parentRun && selectRun(parentRun.id)}>Caller: {parentRun?.projectName ?? 'Not retained in history'}</button>}{children.map((child) => <button key={child.id} onClick={() => selectRun(child.id)}>Called: {child.projectName} · {child.status}</button>)}</div>}
           {run.arguments && <details><summary>Workflow arguments</summary><strong>In</strong><pre>{JSON.stringify(run.arguments.inputs, null, 2)}</pre><strong>Out</strong><pre>{JSON.stringify(run.arguments.outputs ?? {}, null, 2)}</pre></details>}

@@ -2,6 +2,7 @@ import { argumentValue, cloneArgument, initializeArguments, parseWorkflowDefinit
 import { PACKAGE_PREFIX, validatePortablePackage, validateRobotWorkflow, type PortableWorkflowPackage } from '../../src/shared/portableWorkflowPackage';
 import { resolveTargetBindings } from '../../src/shared/uiTargets';
 import { resolveLogMessage } from '../../src/shared/logMessageExpression';
+import { executeAssetActivity, protectDerivedValues, type AssetResolver } from '../../src/shared/assets';
 import { evaluateBreakpointCondition } from '../../src/engine/breakpointCondition';
 
 export type RobotActivity = (id: string, props: Record<string, unknown>) => Promise<{ success: boolean; log: string; outputs?: Record<string, unknown> }>;
@@ -12,7 +13,7 @@ function legacyDefinition(input: any): WorkflowDefinition {
   return parseWorkflowDefinition(JSON.stringify({ projectName: input.projectName ?? 'Workflow', nodes: (input.nodes ?? []).map((node: any) => ({ ...node, data: { ...node.data, label: node.data?.label ?? node.id, properties: node.data?.properties ?? {}, isContainer: node.data?.isContainer ?? !!node.data?.childIds?.length } })), edges: input.edges ?? [], variables: (input.variables ?? []).map((v: any) => ({ id: v.id ?? v.name, type: v.type ?? 'Object', scope: v.scope ?? 'Main', ...v })), arguments: input.arguments ?? [], uiTargets: input.uiTargets ?? [] }));
 }
 export class RobotJobStoppedError extends Error { constructor() { super('Job stopped at an activity boundary.'); this.name = 'RobotJobStoppedError'; } }
-export interface RobotRunOptions { signal?: AbortSignal; live?: boolean; onSecret?: (value: string) => void }
+export interface RobotRunOptions { signal?: AbortSignal; live?: boolean; onSecret?: (value: string) => void; resolveAsset?: AssetResolver }
 /** Resolves calls solely from the submitted package, never the Robot filesystem. */
 export async function executeRobotWorkflow(input: unknown, inputs: Record<string, unknown>, native: RobotActivity, onLog: (level: 'info' | 'error', message: string) => void, options: RobotRunOptions = {}): Promise<RobotWorkflowResult> {
   if (!input || typeof input !== 'object' || Array.isArray(input) || !inputs || typeof inputs !== 'object' || Array.isArray(inputs)) throw Error('Invalid workflow or job inputs.');
@@ -25,14 +26,16 @@ export async function executeRobotWorkflow(input: unknown, inputs: Record<string
     if (definition.nodes.some((n) => n.data.activityId === 'invoke-workflow')) throw Error('Invoke Workflow requires a portable package. Republish from Studio.');
   }
   const checkStop = () => { if (options.signal?.aborted) throw new RobotJobStoppedError(); };
+  const definitions = manifest ? manifest.workflows.map(w => w.definition) : [definition];
+  if (!options.resolveAsset && definitions.some(d => d.nodes.some(n => ['get-asset', 'get-credential'].includes(n.data.activityId)))) throw Error('This workflow requires a Maestro asset context. Select an environment and start it from Robot Jobs.');
   checkStop();
   const secrets = new Set<string>(), events: Array<{ level: 'info' | 'error'; message: string }> = [];
   const calls: RobotWorkflowResult['calls'] = [];
   let steps = 0;
-  const collect = (value: unknown) => {
+  const collect = (value: unknown, properties = false) => {
     const pending = [{ value, depth: 0 }], seen = new Set<object>(); let count = 0;
     while (pending.length && count++ < 20000) { const item = pending.pop()!; if (!item.value || typeof item.value !== 'object' || item.depth > 20 || seen.has(item.value)) continue; seen.add(item.value);
-      for (const [key, next] of Object.entries(item.value)) { if (/password|secret|token|api.?key|credential|authorization/i.test(key) && typeof next === 'string' && next) { secrets.add(next); options.onSecret?.(next); } if (next && typeof next === 'object') pending.push({ value: next, depth: item.depth + 1 }); }
+      for (const [key, next] of Object.entries(item.value)) { if (properties && ['usernameOutput', 'passwordOutput'].includes(key)) continue; if (/password|secret|token|api.?key|credential|authorization/i.test(key) && typeof next === 'string' && next) { secrets.add(next); options.onSecret?.(next); } if (next && typeof next === 'object') pending.push({ value: next, depth: item.depth + 1 }); }
     }
   };
   const clean = (message: string) => { let text = message; for (const secret of [...secrets].sort((a, b) => b.length - a.length)) text = text.split(secret).join('[REDACTED]'); return text.slice(0, 4000); };
@@ -65,7 +68,13 @@ export async function executeRobotWorkflow(input: unknown, inputs: Record<string
       checkStop();
       if (++steps > 10000) throw Error('Robot activity execution limit reached (10,000).');
       const d = node.data, p = d.properties, id = d.activityId;
-      collect(p); emit('info', `Starting ${name} / ${d.label}`);
+      collect(p, true); emit('info', `Starting ${name} / ${d.label}`);
+      if (id === 'get-asset' || id === 'get-credential') {
+        const outputs = await executeAssetActivity(id, p, options.resolveAsset, value => { secrets.add(value); options.onSecret?.(value); });
+        checkStop(); Object.assign(values, outputs);
+        emit('info', 'Read central ' + (id === 'get-credential' ? 'credential' : 'asset') + ' from the selected environment.');
+        return 'normal';
+      }
       if (id === 'break' || id === 'continue') return id;
       if (id === 'invoke-workflow') {
         if (!loader) throw Error('Invoked workflow is not packaged.');
@@ -112,7 +121,9 @@ export async function executeRobotWorkflow(input: unknown, inputs: Record<string
       if (id === 'sequence') return sequence(children(d.childIds ?? []));
       if (id === 'assign') {
         const target = String(p.to ?? ''); if (!validArgumentName(target)) throw Error('Assign needs a variable name.');
-        values[target] = cloneArgument(resolveArgumentInput(p.value, values).value); collect(values);
+        const resolved = resolveArgumentInput(p.value, values).value;
+        protectDerivedValues(p, { value: resolved }, values, [...secrets], value => { secrets.add(value); options.onSecret?.(value); });
+        values[target] = cloneArgument(resolved); collect(values);
       } else if (id === 'create-list') {
         const target = String(p.output ?? 'items'); if (!validArgumentName(target)) throw Error('Create List needs an output variable.'); values[target] = [];
       } else if (['add-to-collection','remove-from-collection','clear-collection'].includes(id)) {
@@ -123,6 +134,7 @@ export async function executeRobotWorkflow(input: unknown, inputs: Record<string
       } else {
         const resolved = Object.fromEntries(Object.entries(p).map(([key, value]) => [key, ['output','to'].includes(key) || id === 'log-message' && key === 'message' ? value : typeof value === 'string' && value.includes('{{') ? resolveArgumentInput(value, values).value : value]));
         if (id === 'log-message') resolved.message = resolveLogMessage(p.message, values);
+        protectDerivedValues(p, resolved, values, [...secrets], value => { secrets.add(value); options.onSecret?.(value); });
         const result = await native(id, resolved); checkStop(); collect(result.outputs); emit(result.success ? 'info' : 'error', result.log);
         if (!result.success) throw Error(result.log || `Activity failed: ${id}`);
         Object.assign(values, result.outputs ?? {}); collect(values);

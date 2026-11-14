@@ -128,6 +128,12 @@ async function uiTest(serverUrl, bridge, control) {
 async function maestroTest(source, packages, robotPort, native, control) {
   const { spawn } = require('node:child_process');
   const python = process.env.RUNWAY_TEST_PYTHON || path.join(os.homedir(), '.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe');
+  if (process.argv.includes('--assets')) {
+    const engine = require(path.join(out, 'engine.cjs'));
+    const definition = def('Asset HTTP fixture', [node('url', 'get-asset', { assetName: 'ERP_URL', assetType: 'String', output: 'url' }), node('number', 'get-asset', { assetName: 'Retries', assetType: 'Int32', output: 'total' }), node('credential', 'get-credential', { assetName: 'ERP_Login', usernameOutput: 'x', passwordOutput: 'y' }), node('log', 'log-message', { message: '{{y.ToUpper()}}' }), node('return', 'assign', { to: 'echo', value: '{{y}}' })], [arg('url', 'Out', 'String', false), arg('total', 'Out', 'Int32', false), arg('echo', 'Out', 'String', false)]);
+    const bundle = await engine.buildPortablePackage(definition, path.join(out, 'assets.rpa.json'), [], '4.0.0', async () => { throw Error('No dependency'); });
+    packages = [...packages, { workflowId: 'assets', name: 'Asset HTTP fixture', version: '4.0.0', definition: bundle }];
+  }
   const config = path.join(out, 'maestro-config.json'); fs.writeFileSync(config, JSON.stringify({ packages, robotUrl: 'http://127.0.0.1:' + robotPort + '/api/robot/jobs' }));
   const start = async () => {
     const child = spawn(python, [path.join(__dirname, 'maestroFixture.py'), source, config], { windowsHide: true, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' }, stdio: ['ignore', 'pipe', 'pipe'] }); let errors = '';
@@ -141,6 +147,7 @@ async function maestroTest(source, packages, robotPort, native, control) {
   const post = async (url, payload) => fetch(url, { method: 'POST', headers: { 'X-API-Key': 'studio-fixture-key', 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
   try {
     assert.deepEqual(await global.robotIpc.get('robot:connect')(null, service.url), { ok: true });
+    if (process.argv.includes('--assets')) await assetHttpTest(service.url, packages.find(p => p.workflowId === 'assets').definition);
     const r = { requestId: crypto.randomUUID(), robotId: 'r1', workflowId: 'published-1.0.0', version: '1.0.0', packageId: packages[0].definition.portablePackage.id, inputs: { greeting: 'Maestro durable result', count: 8 } };
     const created = await (await post(service.url + '/api/v1/robot-jobs', r)).json(); assert.ok(created.jobId);
     await waitFor(async () => (await (await fetch(service.url + '/api/v1/robot-jobs/' + created.jobId, { headers: { 'X-API-Key': 'studio-fixture-key' } })).json()).job?.status === 'success');
@@ -156,5 +163,32 @@ async function maestroTest(source, packages, robotPort, native, control) {
     const isolated = await fetch(service.url + '/api/v1/robot-jobs/' + created.jobId, { headers: { 'X-API-Key': 'studio-fixture-key', 'X-Tenant-Id': 'other' } }); assert.equal(isolated.status, 404);
     console.log('PASS Real Maestro storage functions/schema, Python route adapter, production Robot and Studio UI; callback persistence, stopped state, durable idempotency/results after server restart and tenant-filtered lookup');
   } finally { await service.stop(); }
+}
+async function assetHttpTest(url, bundle) {
+  const request = async (route, body) => {
+    const r = await fetch(url + route, { method: body === undefined ? 'GET' : 'POST', headers: { 'X-API-Key': 'studio-fixture-key', 'Content-Type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    return { status: r.status, body: await r.json() };
+  };
+  const save = (profileId, name, type, value, revision = 0) => request('/api/v1/studio-assets/values', { profileId, name, type, value, revision });
+  for (const [id, target, total] of [['development', 'https://dev.example', 42], ['production', 'https://prod.example', 7]]) {
+    assert.equal((await request('/api/v1/studio-assets/profiles', { id, name: id, enabled: true })).status, 200);
+    assert.equal((await save(id, 'ERP_URL', 'String', target)).status, 200); assert.equal((await save(id, 'Retries', 'Int32', total)).status, 200);
+    assert.equal((await save(id, 'ERP_Login', 'Credential', { username: id + '-private-user', password: id + '-private-password' })).status, 200);
+  }
+  const submit = async environmentId => {
+    const r = await request('/api/v1/robot-jobs', { requestId: crypto.randomUUID(), robotId: 'r1', workflowId: 'assets-4.0.0', version: '4.0.0', packageId: bundle.portablePackage.id, inputs: {}, environmentId });
+    if (r.status !== 202) return r;
+    let view; await waitFor(async () => { view = (await request('/api/v1/robot-jobs/' + r.body.jobId)).body.job; return view?.status === 'success' || view?.status === 'failed'; });
+    assert.equal(view.status, 'success', view.error); return { status: 202, view };
+  };
+  const dev = (await submit('development')).view, prod = (await submit('production')).view;
+  assert.equal(dev.environment.id, 'development'); assert.equal(dev.outputs.url, 'https://dev.example'); assert.equal(dev.outputs.total, 42); assert.equal(dev.outputs.echo, '[REDACTED]');
+  assert.equal(prod.environment.id, 'production'); assert.equal(prod.outputs.url, 'https://prod.example'); assert.equal(prod.outputs.total, 7);
+  for (const profile of ['development', 'production']) { const text = JSON.stringify(profile === 'development' ? dev : prod).toLowerCase(); assert.ok(!text.includes(profile + '-private-user')); assert.ok(!text.includes(profile + '-private-password')); }
+  const denied = await request('/api/v1/robot-jobs/' + dev.jobId + '/assets/resolve', { name: 'ERP_Login', type: 'Credential' }); assert.equal(denied.status, 401);
+  assert.equal((await save('development', 'ERP_URL', 'String', 'https://updated.example', 1)).status, 200); assert.equal((await submit('development')).view.outputs.url, 'https://updated.example');
+  await request('/api/v1/studio-assets/profiles', { id: 'production', name: 'production', enabled: false }); assert.equal((await submit('production')).status, 400);
+  await request('/api/v1/studio-assets/values', { profileId: 'development', name: 'Retries', revision: 1, delete: true }); assert.equal((await submit('development')).status, 400);
+  console.log('PASS Production Robot → Python Maestro scoped credential retrieval, pinned environments, typed assets, redacted callbacks/history, updates without republish and missing/disabled preflight');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

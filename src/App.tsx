@@ -4,6 +4,7 @@ import { ActivityPanel } from './components/ActivityPanel/ActivityPanel';
 import { SequenceCanvas } from './components/SequenceCanvas/SequenceCanvas';
 import { PropertiesPanel } from './components/PropertiesPanel/PropertiesPanel';
 import { StatusBar } from './components/StatusBar/StatusBar';
+import { AssetsMonitor, EnvironmentIndicator } from './components/Assets/AssetsPanel';
 import { RobotJobsMonitor } from './components/RobotJobs/RobotJobsPanel';
 import { BottomPanel } from './components/BottomPanel/BottomPanel';
 import { useWorkflowStore } from './store/workflowStore';
@@ -134,10 +135,12 @@ function App() {
         <div className="app-header__right">
           <ThemeSwitcher />
           <span className="app-header__connection"><span />Runway connected</span>
+          <EnvironmentIndicator />
           <span className="app-header__project" title={projectName}><Icon name="folder" size={15} />{projectName}</span>
         </div>
       </header>
 
+      <AssetsMonitor connection={runwayConnection} />
       <RobotJobsMonitor connection={runwayConnection} />
       <Toolbar activeTab={activeTab} onPublish={() => setShowPublishModal(true)} />
 

@@ -5,6 +5,7 @@ export const jobIsTerminal = (status: RobotJobStatus) => ['stopped', 'success', 
 export interface RobotJobLog { sequence: number; timestamp: string; level: 'info' | 'error'; message: string }
 export interface RobotJobView {
   jobId: string; status: RobotJobStatus; startedAt: number; completedAt?: number;
+  environment?: { id: string; name: string };
   logs: RobotJobLog[]; outputs?: unknown; error?: string;
   package?: { id: string; version: string };
   workflowCalls?: Array<{ name: string; depth: number; status: string }>;
@@ -12,11 +13,12 @@ export interface RobotJobView {
 export interface RobotChoice { id: string; name: string; online: boolean }
 export interface JobPackageChoice {
   workflowId: string; name: string; version: string; packageId: string;
-  inputArguments: WorkflowArgument[];
+  inputArguments: WorkflowArgument[]; requiredAssets?: import('./assets').AssetRequirement[];
 }
-export interface RobotJobCatalog { robots: RobotChoice[]; packages: JobPackageChoice[] }
+export interface RobotJobCatalog { robots: RobotChoice[]; packages: JobPackageChoice[]; environments?: import('./assets').EnvironmentProfile[] }
 export interface RobotJobRequest {
   requestId: string; robotId: string; workflowId: string; version: string; packageId: string;
+  environmentId?: string;
   inputs: Record<string, unknown>;
 }
 

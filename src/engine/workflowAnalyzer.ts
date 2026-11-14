@@ -3,15 +3,16 @@ import type { WorkflowArgument, WorkflowNodeData, WorkflowVariable } from '../ty
 import { getActivity } from '../activities/registry';
 import type { UiTarget } from '../shared/uiTargets';
 import { validateArguments, validArgumentName } from '../shared/invokedWorkflows';
+import { assetRequirement, type AssetCatalog } from '../shared/assets';
 
-export interface AnalysisSource { nodes: Node<WorkflowNodeData>[]; edges: Edge[]; variables: WorkflowVariable[]; arguments: WorkflowArgument[]; targets: UiTarget[]; projectName: string; filePath: string | null }
+export interface AnalysisSource { assets?: { profileId: string; catalog: AssetCatalog }; nodes: Node<WorkflowNodeData>[]; edges: Edge[]; variables: WorkflowVariable[]; arguments: WorkflowArgument[]; targets: UiTarget[]; projectName: string; filePath: string | null }
 export type FindingSeverity = 'error' | 'warning' | 'info';
 export interface AnalysisFinding { id: string; code: string; severity: FindingSeverity; nodeId?: string; activity: string; property: string; message: string; recommendation: string }
 export interface AnalysisReport { signature: string; projectName: string; analyzedAt: number; findings: AnalysisFinding[]; truncated: boolean; dependencyState?: 'checking' | 'complete' | 'unavailable' }
 const identifier = /^[A-Za-z_]\w*$/;
 const blank = (value: unknown) => value === undefined || value === null || typeof value === 'string' && !value.trim();
 const variableName = (value: unknown) => String(value ?? '').trim().replace(/^\{\{\s*|\s*\}\}$/g, '');
-const outputField = (name: string) => name === 'output' || name === 'to';
+const outputField = (name: string) => ['output', 'to', 'usernameOutput', 'passwordOutput'].includes(name);
 
 /** Includes semantic edits, excluding selection, folding, execution state and canvas layout. */
 export function analysisSignature(source: AnalysisSource) {
@@ -19,6 +20,7 @@ export function analysisSignature(source: AnalysisSource) {
     activityId: data.activityId, label: data.label, properties: data.properties, targetBindings: data.targetBindings,
     parentId: data.parentId, branchId: data.branchId, childIds: data.childIds, branches: data.branches, loopVariable: data.loopVariable, isContainer: data.isContainer })),
     edges: source.edges.map(({ id, source, target }) => ({ id, source, target })), variables: source.variables, arguments: source.arguments,
+    assets: source.assets ? { profileId: source.assets.profileId, profiles: source.assets.catalog.profiles, assets: source.assets.catalog.assets.map(({ name, type, revision, profileId }) => ({ name, type, revision, profileId })) } : undefined,
     targets: source.targets.map(({ id, name, selector, targetType, application }) => ({ id, name, selector, targetType, application })) });
 }
 
@@ -50,6 +52,19 @@ export function analyzeWorkflow(source: AnalysisSource): AnalysisReport {
     if (!node.id || ids.has(node.id)) add('WA101', 'error', node, 'Structure', 'Activity IDs must be nonempty and unique.', 'Repair the duplicate or missing ID in the workflow definition.');
     ids.add(node.id);
     const activity = getActivity(node.data.activityId);
+    if (['get-asset', 'get-credential'].includes(node.data.activityId)) {
+      try {
+        const ref = assetRequirement(node.data.activityId, node.data.properties);
+        if (!source.assets?.catalog.profiles.length) add('WA400', 'warning', node, 'Asset name', 'Central assets could not be checked.', 'Connect to Maestro, refresh Assets and analyze again. No protected values are read by Analyzer.');
+        else {
+          const context = source.assets, profile = context.catalog.profiles.find(p => p.id === context.profileId);
+          const asset = context.catalog.assets.find(a => a.profileId === context.profileId && a.name === ref.name);
+          if (!profile?.enabled) add('WA401', 'error', node, 'Environment', 'Selected environment is missing or disabled.', 'Choose an enabled environment in Assets.');
+          else if (!asset || asset.type !== ref.type) add('WA402', 'error', node, 'Asset name', 'Asset is missing or its type differs in the selected environment.', 'Create the matching asset or correct the activity reference.');
+        }
+        if (node.data.activityId === 'get-credential' && node.data.properties.usernameOutput === node.data.properties.passwordOutput) add('WA403', 'error', node, 'Outputs', 'Username and password require different output variables.', 'Choose distinct variable names.');
+      } catch { add('WA404', 'error', node, 'Asset name', 'Asset reference or type is invalid.', 'Use a static central asset name and a supported type.'); }
+    }
     if (!activity) add('WA102', 'error', node, 'Activity', 'This activity is not in the Studio activity registry.', 'Replace it with a supported activity from the Activities panel.');
     if (activity?.isContainer && !node.data.isContainer) add('WA119', 'error', node, 'Structure', 'This control activity is not marked as a container and will not execute its block normally.', 'Restore the activity container flag or recreate the block from Activities.');
     if (['while', 'end'].includes(node.data.activityId) || node.data.activityId.startsWith('outlook-desktop-')) add('WA103', 'warning', node, 'Activity', 'This activity currently falls back to simulated execution in Studio.', 'Do not rely on this activity for real automation until its runtime implementation is available.');

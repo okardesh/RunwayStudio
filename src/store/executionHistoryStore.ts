@@ -24,6 +24,7 @@ export interface ExecutionRun {
   endedAt?: number;
   status: RunStatus;
   debug: boolean;
+  environment?: { id: string; name: string };
   parentRunId?: string;
   rootRunId?: string;
   invocationNodeId?: string;

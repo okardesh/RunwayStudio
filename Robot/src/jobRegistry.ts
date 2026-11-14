@@ -1,10 +1,13 @@
 import { executeRobotWorkflow, RobotJobStoppedError, type RobotActivity, type RobotWorkflowResult } from './workflowRuntime';
 import { createHash } from 'node:crypto';
+import type { AssetResolver } from '../../src/shared/assets';
 import { jobIsTerminal, jobSecrets, redactJobValue, type RobotJobView } from '../../src/shared/robotJobs';
 
 export interface RobotTrigger {
   jobId: string; workflowId?: string; workflow?: { definition?: unknown } | Record<string, unknown>;
   definition?: unknown; inputs?: Record<string, unknown>; callbackUrl: string;
+  environment?: { id: string; name: string };
+  assetContext?: { serverUrl: string; jobId: string; token: string };
 }
 interface Entry { trigger: RobotTrigger; view: RobotJobView; controller: AbortController; secrets: Set<string>; fingerprint: string; result?: RobotWorkflowResult }
 /** All control is cooperative: an active native activity finishes before cancellation takes effect. */
@@ -12,7 +15,7 @@ export class RobotJobRegistry {
   private entries = new Map<string, Entry>();
   private queue: Entry[] = [];
   private active: Entry | undefined;
-  constructor(private native: RobotActivity, private complete: (trigger: RobotTrigger, view: RobotJobView, result?: RobotWorkflowResult) => Promise<void>) {}
+  constructor(private native: RobotActivity, private complete: (trigger: RobotTrigger, view: RobotJobView, result?: RobotWorkflowResult) => Promise<void>, private resolver?: (trigger: RobotTrigger, signal: AbortSignal) => AssetResolver | undefined) {}
   get running() { return !!this.active; }
   get queued() { return this.queue.length; }
   get(jobId: string): RobotJobView | undefined {
@@ -33,7 +36,8 @@ export class RobotJobRegistry {
     if (this.queue.length >= 10) throw Error('Robot job queue is full.');
     // Bound retained job data; never remove running/queued jobs.
     for (const [id, entry] of this.entries) if (this.entries.size >= 20 && jobIsTerminal(entry.view.status)) this.entries.delete(id);
-    const entry: Entry = { trigger, fingerprint, secrets: jobSecrets(trigger.inputs), controller: new AbortController(), view: { jobId: trigger.jobId, status: 'queued', startedAt: Date.now(), logs: [] } };
+    const entry: Entry = { trigger, fingerprint, secrets: jobSecrets(trigger.inputs), controller: new AbortController(), view: { jobId: trigger.jobId, status: 'queued', startedAt: Date.now(), logs: [], environment: trigger.environment } };
+    if (trigger.assetContext?.token) entry.secrets.add(trigger.assetContext.token);
     this.entries.set(trigger.jobId, entry); this.queue.push(entry);
     const accepted = this.get(trigger.jobId)!;
     void this.drain(); return accepted;
@@ -69,7 +73,7 @@ export class RobotJobRegistry {
       this.log(entry, 'info', 'Robot started the job.');
       const { trigger } = entry;
       const definition = trigger.definition ?? (trigger.workflow && 'definition' in trigger.workflow ? trigger.workflow.definition : trigger.workflow);
-      entry.result = await executeRobotWorkflow(definition, trigger.inputs ?? {}, this.native, (level, message) => this.log(entry, level, message), { signal: entry.controller.signal, live: true, onSecret: secret => entry.secrets.add(secret) });
+      entry.result = await executeRobotWorkflow(definition, trigger.inputs ?? {}, this.native, (level, message) => this.log(entry, level, message), { signal: entry.controller.signal, live: true, onSecret: secret => entry.secrets.add(secret), resolveAsset: this.resolver?.(trigger, entry.controller.signal) });
       entry.view.status = 'success'; entry.view.outputs = entry.result.outputs;
       jobSecrets(entry.result.outputs, entry.secrets);
       entry.view.package = entry.result.package; entry.view.workflowCalls = entry.result.calls;

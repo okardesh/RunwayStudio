@@ -35,6 +35,7 @@ with sqlite3.connect(namespace['WORKFLOWS_DB']) as conn:
                     VALUES(?,?,?,?,?,?,?,?,?,?,?)''', ('default', 'robot', 'r1', 1, 1, now, now, now, now + 3600000, config['robotUrl'], 'robot-fixture-key'))
 
 module = Path(__file__).resolve().parents[2] / 'server' / 'maestro_robot_jobs.py'
+sys.path.insert(0, str(module.parent))
 spec = importlib.util.spec_from_file_location('fixture_jobs', module)
 jobs = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(jobs)
