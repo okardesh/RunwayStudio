@@ -1,0 +1,18 @@
+.app .bottom-panel.bottom-panel--explorer { height:clamp(370px,52vh,600px); }
+.ui-explorer { display:flex;flex-direction:column;height:100%;min-height:0;color:var(--studio-text);font-size:12px; }
+.ui-explorer header { display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--studio-border); }
+.ui-explorer header select { max-width:260px; }
+.ui-explorer button,.ui-explorer input,.ui-explorer select,.ui-explorer textarea { color:inherit;background:var(--studio-panel);border:1px solid var(--studio-border);border-radius:5px;padding:6px 8px;font:inherit; }
+.ui-explorer button { cursor:pointer; }.ui-explorer button:disabled { opacity:.45;cursor:default; }
+.uxe-columns { display:grid;grid-template-columns:minmax(220px,1fr) minmax(300px,1fr);flex:1;min-height:0; }
+.uxe-tree-panel { display:flex;flex-direction:column;overflow:auto;border-right:1px solid var(--studio-border);padding:10px;gap:8px; }
+.uxe-node { display:flex;align-items:center;gap:3px;min-height:28px;white-space:nowrap; }
+.uxe-node button { border:0;background:transparent;padding:4px;text-align:left; }.uxe-node small { color:var(--studio-muted); }
+.uxe-node.uxe-selected { background:var(--studio-hover);box-shadow:inset 2px 0 var(--studio-blue); }
+.uxe-leaf { display:inline-block;width:18px;flex-shrink:0; }
+.uxe-properties { overflow:auto;padding:12px;display:flex;flex-direction:column;gap:10px; }
+.uxe-properties dl { margin:0; }.uxe-properties dl>div { display:grid;grid-template-columns:110px 1fr;gap:8px;padding:5px 0;border-bottom:1px solid var(--studio-border); }.uxe-properties dd { margin:0;overflow-wrap:anywhere; }
+.uxe-properties label { display:flex;flex-direction:column;gap:5px; }.uxe-properties textarea { resize:vertical; }.uxe-actions { display:flex;gap:6px;flex-wrap:wrap; }
+.uxe-message { padding:7px 14px;border-bottom:1px solid var(--studio-border);overflow-wrap:anywhere; }
+.ui-explorer small,.ui-explorer p { color:var(--studio-muted);line-height:1.5; }
+@media(max-width:900px){.uxe-columns{grid-template-columns:1fr 1fr;}.ui-explorer header select{max-width:180px;}}

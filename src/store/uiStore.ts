@@ -7,7 +7,7 @@ export interface OutputMessage {
   timestamp: string;
 }
 
-export type BottomPanelTab = 'dataManager' | 'output' | 'markers' | 'errors' | 'history' | 'targets' | 'debug' | 'tests' | 'jobs';
+export type BottomPanelTab = 'dataManager' | 'output' | 'markers' | 'errors' | 'history' | 'targets' | 'debug' | 'tests' | 'jobs' | 'explorer';
 
 export interface UiTargetDraft { nodeId: string; property: string; selector: string; application: string; name: string; targetType: 'browser' | 'desktop' }
 
@@ -23,6 +23,7 @@ interface UiState {
   analyzerNodeId: string | null;
   selectedHistoryRunId: string | null;
   selectedUiTargetId: string | null;
+  explorerTargetProperty: string | null;
   uiTargetDraft: UiTargetDraft | null;
 
   setActivitySearchQuery: (query: string) => void;
@@ -47,6 +48,7 @@ export const useUiStore = create<UiState>((set) => ({
   analyzerNodeId: null,
   selectedHistoryRunId: null,
   selectedUiTargetId: null,
+  explorerTargetProperty: null,
   uiTargetDraft: null,
 
   setActivitySearchQuery: (query) => set({ activitySearchQuery: query }),

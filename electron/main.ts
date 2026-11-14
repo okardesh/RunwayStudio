@@ -5,6 +5,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { execFile } from 'node:child_process'
 import { executeActivity } from './automation/index.js'
+import { inspectUi, validateUiSelector } from './automation/uiExplorer';
 import { pickDesktopElement } from './automation/picker.js'
 import { registerRunwayLicenseIpc } from './runwayLicenseIpc'
 import { captureFailureScreenshot } from './executionScreenshot'
@@ -174,6 +175,8 @@ app.whenReady().then(() => {
   ipcMain.handle('automation:capture-failure', captureFailureScreenshot);
 
   // Return all open windows with title and base64 thumbnail for the Indicate modal
+  ipcMain.handle('ui-explorer:inspect', async (_event, title: string, provider: 'msaa' | 'uia') => inspectUi(title, provider));
+  ipcMain.handle('ui-explorer:validate', async (_event, selector: string, highlight?: boolean) => validateUiSelector(selector, highlight === true));
   ipcMain.handle('get-open-windows', async () => {
     const sources = await desktopCapturer.getSources({
       types: ['window'],

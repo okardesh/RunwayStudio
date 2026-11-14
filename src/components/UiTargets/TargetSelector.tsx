@@ -18,6 +18,7 @@ export function TargetSelector({ nodeId, property, targetType, application, chil
     useUiStore.setState({ activeBottomPanelTab: 'targets', selectedUiTargetId: id || null, uiTargetDraft: null });
   };
   return <div className="target-selector">
+    {targetType === 'desktop' && <button type="button" className="target-selector__save" onClick={() => useUiStore.setState({ activeBottomPanelTab: 'explorer', explorerTargetProperty: property })}><Icon name="search" size={13} />Open in UI Explorer</button>}
     <select aria-label={`Shared UI target for ${property}`} value={id || ''} onChange={(e) => bindUiTarget(nodeId, property, e.target.value || null)}>
       <option value="">Local selector</option>
       {id && !target && <option value={id}>Missing target — reconnect</option>}

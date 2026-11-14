@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Collections.Generic;
 using System.Text;
 using System.Reflection;
+using System.Text.RegularExpressions;
 [StructLayout(LayoutKind.Sequential)] public struct PickerPoint { public int X; public int Y; }
 public class PickerHit {
   public string Name, AutomationId, ClassName, ControlType;
@@ -23,6 +24,11 @@ public class PickerHit {
   public void Invoke() { Accessible.accDoDefaultAction(Child); }
   public void Toggle() { Invoke(); }
   public void SetValue(string value) { Accessible.set_accValue(Child,value); }
+}
+public class ExplorerHit {
+  public int Id, ParentId;
+  public string Name, ControlType;
+  public bool Protected;
 }
 public class PickerCurrent {
   private PickerHit hit;
@@ -95,7 +101,9 @@ public class PickerNative {
   // when the UIA window bounds and mouse APIs use physical pixels. Compare the same
   // client rectangle in both spaces instead of guessing a monitor scale factor.
   private static void NormalizeBounds(Accessibility.IAccessible root,IntPtr window,List<PickerHit> hits) {
-    int x,y,width,height;root.accLocation(out x,out y,out width,out height,0);
+    int x,y,width,height;
+    try { root.accLocation(out x,out y,out width,out height,0); }
+    catch(COMException) { return; }
     NativeRect client;var origin=new PickerPoint();
     if(width<=0 || height<=0 || !GetClientRect(window,out client) || !ClientToScreen(window,ref origin))return;
     double sx=(double)(client.Right-client.Left)/width,sy=(double)(client.Bottom-client.Top)/height;
@@ -202,23 +210,31 @@ public class PickerNative {
       return true;
     }, IntPtr.Zero);
   }
-  private static void FindMatches(Accessibility.IAccessible accessible,string name,string role,List<PickerHit> matches,HashSet<string> seen,int depth,ref int budget,System.Diagnostics.Stopwatch clock) {
-    if(depth>48 || --budget<0 || clock.ElapsedMilliseconds>2000)return;
+  public static string StableName(string name) {
+    return Regex.Replace(name ?? "", @"\s+\d+\s+unread\s+messages?\s*$", "", RegexOptions.IgnoreCase).TrimEnd();
+  }
+  private static bool NameMatches(string actual,string expected,string mode) {
+    return mode=="IgnoreUnreadCount" ? StableName(actual)==StableName(expected) : actual==expected;
+  }
+  private static bool lookupTruncated;
+  private static void FindMatches(Accessibility.IAccessible accessible,string name,string role,string mode,List<PickerHit> matches,HashSet<string> seen,int depth,ref int budget,System.Diagnostics.Stopwatch clock) {
+    if(depth>48 || --budget<0 || clock.ElapsedMilliseconds>5000) { lookupTruncated=true;return; }
     try {
       var hit=MsaaRead(accessible,0);
-      if(hit.Name==name && hit.ControlType==role && hit.Width>0 && hit.Height>0) {
+      if(NameMatches(hit.Name,name,mode) && hit.ControlType==role && hit.Width>0 && hit.Height>0) {
         string identity=hit.Name+"|"+hit.ControlType+"|"+hit.Left+","+hit.Top+","+hit.Width+","+hit.Height;
         if(seen.Add(identity))matches.Add(hit);
       }
-      int count=Math.Min(accessible.accChildCount,1000);if(count<=0)return;
+      int total=accessible.accChildCount;int count=Math.Min(total,1000);if(total>count)lookupTruncated=true;if(count<=0)return;
       object[] children=new object[count];int obtained;
       if(AccessibleChildren(accessible,0,count,children,out obtained)<0)return;
-      for(int i=0;i<obtained && budget>0 && clock.ElapsedMilliseconds<=2000;i++) {
+      for(int i=0;i<obtained;i++) {
+        if(budget<=0 || clock.ElapsedMilliseconds>5000) { lookupTruncated=true;break; }
         var child=children[i] as Accessibility.IAccessible;
-        if(child!=null)FindMatches(child,name,role,matches,seen,depth+1,ref budget,clock);
+        if(child!=null)FindMatches(child,name,role,mode,matches,seen,depth+1,ref budget,clock);
         else {
           var item=MsaaRead(accessible,children[i]);
-          if(item.Name==name && item.ControlType==role && item.Width>0 && item.Height>0) {
+          if(NameMatches(item.Name,name,mode) && item.ControlType==role && item.Width>0 && item.Height>0) {
             string identity=item.Name+"|"+item.ControlType+"|"+item.Left+","+item.Top+","+item.Width+","+item.Height;
             if(seen.Add(identity))matches.Add(item);
           }
@@ -227,15 +243,20 @@ public class PickerNative {
     } catch(COMException) { }
   }
   public static PickerHit FindControl(IntPtr hwnd,string name,string role) {
+    return FindControl(hwnd,name,role,"IgnoreUnreadCount");
+  }
+  public static PickerHit FindControl(IntPtr hwnd,string name,string role,string mode) {
+    if(mode!="Exact" && mode!="IgnoreUnreadCount")throw new InvalidOperationException("Unknown name match mode");
     UsePhysicalCoordinates();
     PrepareChromium(hwnd);
+    lookupTruncated=false;
     var matches=new List<PickerHit>();var seen=new HashSet<string>();int budget=10000;
     var clock=System.Diagnostics.Stopwatch.StartNew();
     foreach(object root in accessibilityRoots) {
       var accessible=root as Accessibility.IAccessible;
       if(accessible!=null) {
         var group=new List<PickerHit>();var groupSeen=new HashSet<string>();
-        FindMatches(accessible,name,role,group,groupSeen,0,ref budget,clock);
+        FindMatches(accessible,name,role,mode,group,groupSeen,0,ref budget,clock);
         IntPtr window;
         if(rootWindows.TryGetValue(root,out window))NormalizeBounds(accessible,window,group);
         foreach(var hit in group) {
@@ -244,9 +265,40 @@ public class PickerNative {
         }
       }
     }
+    if(lookupTruncated)throw new InvalidOperationException("Accessible tree scan limit reached. A unique target could not be confirmed.");
     if(matches.Count==0)throw new InvalidOperationException("Accessible control not found: "+name);
     if(matches.Count!=1)throw new InvalidOperationException("Accessible selector is ambiguous: "+name);
     return matches[0];
+  }
+  public static bool ExplorerTruncated;
+  private static void WalkExplorer(Accessibility.IAccessible accessible,object child,int parent,int depth,List<ExplorerHit> nodes,HashSet<object> seen,System.Diagnostics.Stopwatch clock) {
+    if(nodes.Count>=1500 || depth>40 || clock.ElapsedMilliseconds>3500) { ExplorerTruncated=true;return; }
+    try {
+      var hit=MsaaRead(accessible,child);
+      bool protectedField=(Convert.ToInt32(accessible.get_accState(child)) & 0x20000000)!=0;
+      int id=nodes.Count;
+      nodes.Add(new ExplorerHit { Id=id,ParentId=parent,Name=protectedField ? "[Protected]" : hit.Name,ControlType=hit.ControlType,Protected=protectedField });
+      if(protectedField || Convert.ToInt32(child)!=0 || !seen.Add(accessible))return;
+      int count=Math.Min(accessible.accChildCount,1500);if(count<=0)return;
+      object[] children=new object[count];int obtained;
+      if(AccessibleChildren(accessible,0,count,children,out obtained)<0)return;
+      for(int i=0;i<obtained;i++) {
+        if(nodes.Count>=1500 || clock.ElapsedMilliseconds>3500) { ExplorerTruncated=true;break; }
+        var nested=children[i] as Accessibility.IAccessible;
+        WalkExplorer(nested ?? accessible,nested!=null ? (object)0 : children[i],id,depth+1,nodes,seen,clock);
+      }
+    } catch(COMException) { }
+  }
+  public static ExplorerHit[] Explore(IntPtr hwnd) {
+    UsePhysicalCoordinates();PrepareChromium(hwnd);ExplorerTruncated=false;
+    var nodes=new List<ExplorerHit>();var seen=new HashSet<object>();var clock=System.Diagnostics.Stopwatch.StartNew();
+    foreach(object root in accessibilityRoots) {
+      IntPtr owner;
+      if(!rootOwners.TryGetValue(root,out owner) || owner!=GetAncestor(hwnd,2))continue;
+      var accessible=root as Accessibility.IAccessible;
+      if(accessible!=null)WalkExplorer(accessible,0,-1,0,nodes,seen,clock);
+    }
+    return nodes.ToArray();
   }
   private delegate IntPtr MouseProc(int code, IntPtr message, IntPtr data);
   private static MouseProc callback = OnMouse;

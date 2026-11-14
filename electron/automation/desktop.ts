@@ -26,7 +26,7 @@ type Result = { success: true; log: string; outputs?: Record<string, unknown> }
 // Async (execFile, not execSync) — a synchronous child-process call here blocks
 // Electron's main/UI thread, freezing the whole app for the duration of every
 // desktop-automation step.
-function ps(script: string, timeout = 30000): Promise<string> {
+export function ps(script: string, timeout = 30000): Promise<string> {
   const tmpFile = path.join(os.tmpdir(), `rpa-ps-${Date.now()}-${Math.floor(Math.random() * 1e6)}.ps1`);
   // Windows PowerShell 5.1 otherwise decodes UTF-8 scripts as the ANSI code page.
   fs.writeFileSync(tmpFile, '\uFEFF' + "$ErrorActionPreference='Stop'\n[Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false)\n" + script, { encoding: 'utf8' });
@@ -34,7 +34,7 @@ function ps(script: string, timeout = 30000): Promise<string> {
     execFile(
       'powershell',
       ['-NonInteractive', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', tmpFile],
-      { encoding: 'utf8', timeout, windowsHide: true },
+      { encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 8 * 1024 * 1024 },
       (err, stdout, stderr) => {
         fs.unlink(tmpFile, () => {});
         if (err) { reject(new Error(String(stderr || err.message).trim())); return; }
@@ -94,18 +94,21 @@ const UIA_PROP: Record<string, string> = {
 // controlType compares against a ControlType object (e.g. [ControlType]::Button), not a string —
 // every other property compares against a plain string value.
 function valueLiteral(prop: string, val: string): string {
+  if (prop === 'controlType' && !/^[A-Za-z][A-Za-z0-9]*$/.test(val)) throw Error('Invalid control type');
   return prop === 'controlType'
     ? `[System.Windows.Automation.ControlType]::${val}`
     : `'${val.replace(/'/g, "''")}'`;
 }
 
-function buildFinder(selector: string): string {
+export function buildFinder(selector: string): string {
   const { window, conditions } = parseSel(selector);
   if (!window) throw new Error('Selector must start with window:Title');
 
   if (conditions.length === 1 && conditions[0].prop === 'msaa') {
-    const target = JSON.parse(Buffer.from(conditions[0].val, 'base64').toString('utf8')) as { name: string; controlType: string };
+    const target = JSON.parse(Buffer.from(conditions[0].val, 'base64').toString('utf8')) as { name: string; controlType: string; nameMatch?: string };
     if (typeof target.name !== 'string' || !target.name || typeof target.controlType !== 'string') throw new Error('Invalid accessible selector');
+    const match = target.nameMatch ?? 'IgnoreUnreadCount';
+    if (!['Exact', 'IgnoreUnreadCount'].includes(match)) throw new Error('Invalid accessible name match mode');
     const literal = (value: string) => "'" + value.replace(/'/g, "''") + "'";
     return UIA_INIT + `
 $ErrorActionPreference = 'Stop'
@@ -114,38 +117,44 @@ Add-Type -ReferencedAssemblies @('System.dll', 'System.Core.dll', (Join-Path ([S
 ${PICKER_NATIVE_CSHARP}
 "@
 $condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, ${literal(window)})
-$wnd = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, $condition)
-if ($wnd -eq $null) { throw 'Target application window was not found.' }
-$el = [PickerNative]::FindControl([IntPtr]$wnd.Current.NativeWindowHandle, ${literal(target.name)}, ${literal(target.controlType)})
+$windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children, $condition)
+if ($windows.Count -ne 1) { throw 'Target window must match exactly one open application.' }
+$wnd = $windows[0]
+$el = [PickerNative]::FindControl([IntPtr]$wnd.Current.NativeWindowHandle, ${literal(target.name)}, ${literal(target.controlType)}, ${literal(match)})
 `;
   }
 
   let script = UIA_INIT;
   script += `
 $wndCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, '${window.replace(/'/g, "''")}')
-$wnd = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, $wndCond)
-if ($wnd -eq $null) { throw "Window not found: ${window}" }
+$windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children, $wndCond)
+if ($windows.Count -ne 1) { throw 'Target window must match exactly one open application.' }
+$wnd = $windows[0]
 `;
 
   if (conditions.length === 0) {
     script += '$el = $wnd\n';
   } else if (conditions.length === 1) {
     const c = conditions[0];
-    const prop = UIA_PROP[c.prop] ?? UIA_PROP.name;
+    const prop = UIA_PROP[c.prop];
+    if (!prop) throw Error('Unknown desktop selector property');
     script += `$cond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.${prop}, ${valueLiteral(c.prop, c.val)})
-$el = $wnd.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)
-if ($el -eq $null) { throw "Element not found: ${c.prop}=${c.val}" }
+$matches = $wnd.FindAll([System.Windows.Automation.TreeScope]::Descendants, $cond)
+if ($matches.Count -ne 1) { throw 'Element selector must match exactly one target.' }
+$el = $matches[0]
 `;
   } else {
     const conds = conditions.map((c, i) => {
-      const prop = UIA_PROP[c.prop] ?? UIA_PROP.name;
+      const prop = UIA_PROP[c.prop];
+    if (!prop) throw Error('Unknown desktop selector property');
       return `$c${i} = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.${prop}, ${valueLiteral(c.prop, c.val)})`;
     }).join('\n');
     const andCond = conditions.map((_, i) => `$c${i}`).join(', ');
     script += `${conds}
 $andCond = New-Object System.Windows.Automation.AndCondition(${andCond})
-$el = $wnd.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $andCond)
-if ($el -eq $null) { throw "Element not found" }
+$matches = $wnd.FindAll([System.Windows.Automation.TreeScope]::Descendants, $andCond)
+if ($matches.Count -ne 1) { throw 'Element selector must match exactly one target.' }
+$el = $matches[0]
 `;
   }
 

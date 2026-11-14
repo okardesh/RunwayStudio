@@ -3,6 +3,8 @@ import type { LicenseRequest, LicenseTransportResult } from '../src/shared/runwa
 
 contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
+  inspectUi: (title: string, provider: 'msaa' | 'uia') => ipcRenderer.invoke('ui-explorer:inspect', title, provider),
+  validateUiSelector: (selector: string, highlight = false) => ipcRenderer.invoke('ui-explorer:validate', selector, highlight),
   copyText: (text: string) => ipcRenderer.invoke('studio:copy-text', text) as Promise<boolean>,
   readInvokedWorkflow: (requested: string, callerPath: string | null) => ipcRenderer.invoke('workflow:read-invoked', requested, callerPath) as Promise<{ path: string; content: string }>,
   chooseInvokedWorkflow: () => ipcRenderer.invoke('workflow:choose-invoked') as Promise<{ cancelled: true } | { path: string; content: string }>,
