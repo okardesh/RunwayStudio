@@ -6,6 +6,7 @@ import os
 import re
 import secrets
 import sqlite3
+import maestro_audit
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -181,6 +182,7 @@ def handle(handler, method, parsed, host):
         with database(host, tenant) as conn:
             with conn:
                 conn.execute('BEGIN IMMEDIATE')
+                audit_actor = maestro_audit.identity(conn, tenant, handler.headers, host)
                 if parsed.path == BASE + '/profiles':
                     name, enabled = str(p.get('name', '')).strip(), p.get('enabled', True)
                     if not name or len(name) > 80 or not isinstance(enabled, bool):
@@ -215,8 +217,13 @@ def handle(handler, method, parsed, host):
                     item = name
                 else:
                     raise AssetError('Asset endpoint not found.')
-                conn.execute('INSERT INTO studio_asset_audit VALUES (?,?,?,?,?)', (tenant, profile_id, item, action, int(time.time() * 1000)))
+                stamp = int(time.time() * 1000)
+                legacy = conn.execute('INSERT INTO studio_asset_audit VALUES (?,?,?,?,?)', (tenant, profile_id, item, action, stamp))
+                maestro_audit.record(conn, tenant, audit_actor, 'assets', {'profile-update':'environment.updated','asset-save':'asset.saved','asset-delete':'asset.deleted'}[action], 'environment' if action == 'profile-update' else 'asset', item, profile_id=profile_id, event_key='asset:'+str(legacy.lastrowid), at=stamp,
+                    metadata={'enabled': enabled} if action == 'profile-update' else {'revisionBefore': existing[0] if existing else 0, 'revisionAfter': (existing[0] if existing else 0)+1, 'assetType': p.get('type')} if action == 'asset-save' else {'revisionBefore': existing[0] if existing else 0})
         handler._respond(200, {'ok': True})
+    except PermissionError as error:
+        handler._respond(403, {'ok': False, 'error': str(error)})
     except AssetError as error:
         handler._respond(400, {'ok': False, 'error': str(error)})
     except Exception:

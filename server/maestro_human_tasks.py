@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import parse_qs
 import maestro_assets
+import maestro_audit
 
 BASE = '/api/v1/human-tasks'
 TERMINAL = ('success', 'failed', 'stopped')
@@ -59,7 +60,10 @@ def task_view(row):
     return {'id': row['id'], 'jobId': row['job_id'], 'title': row['title'], 'assignee': row['assignee'], 'context': json.loads(row['context']), 'formSchema': json.loads(row['schema']), 'status': row['status'], 'expiresAt': row['expires_at'], 'result': json.loads(row['result']) if row['result'] else None}
 
 def audit(conn, tenant, task_id, actor, action, detail=''):
-    conn.execute('INSERT INTO studio_human_audit(tenant,task_id,actor,action,at,detail) VALUES (?,?,?,?,?,?)', (tenant, task_id, actor, action, now(), detail))
+    stamp = now()
+    safe_detail = detail if action == 'Waiting' and re.fullmatch(r'[a-f0-9-]{36}', detail or '') else ''
+    row = conn.execute('INSERT INTO studio_human_audit(tenant,task_id,actor,action,at,detail) VALUES (?,?,?,?,?,?)', (tenant, task_id, actor, action, stamp, safe_detail))
+    maestro_audit.human_event(conn, row.lastrowid, tenant, task_id, actor, action, stamp)
 
 def expire(conn):
     for row in conn.execute("SELECT * FROM studio_human_tasks WHERE status='Pending' AND expires_at<=?", (now(),)).fetchall():
@@ -119,6 +123,7 @@ def save_wait(host, tenant, view, checkpoint):
 
 def finish(conn, tenant, job_id):
     if not conn.execute("SELECT 1 FROM sqlite_master WHERE name='studio_human_tasks'").fetchone(): return
+    for row in conn.execute("SELECT id FROM studio_human_tasks WHERE job_id=? AND tenant=? AND status='Pending'", (job_id, tenant)).fetchall(): audit(conn, tenant, row[0], 'system', 'Cancelled')
     conn.execute("UPDATE studio_human_tasks SET status='Cancelled' WHERE job_id=? AND tenant=? AND status='Pending'", (job_id, tenant))
     conn.execute("UPDATE studio_human_waits SET phase='consumed' WHERE job_id=?", (job_id,))
 
@@ -202,6 +207,9 @@ def handle(handler, method, parsed, host):
                 if p.get('revision', 0) != (old[0] if old else 0): raise ValueError('Operator changed. Refresh before saving.')
                 token = secrets.token_urlsafe(32)
                 conn.execute('INSERT INTO studio_human_operators VALUES (?,?,?,?,?,?,?) ON CONFLICT(tenant,id) DO UPDATE SET name=excluded.name,roles=excluded.roles,token_hash=excluded.token_hash,enabled=excluded.enabled,revision=excluded.revision', (tenant, id, p['name'], json.dumps(roles), hashlib.sha256(token.encode()).hexdigest(), int(p.get('enabled', True)), (old[0] if old else 0)+1))
+                actor = 'user:' + identity['id'] if identity else 'admin:shared-key'
+                maestro_audit.record(conn, tenant, actor, 'operators', 'operator.updated' if old else 'operator.created', 'operator', id, metadata={'enabled': p.get('enabled', True), 'roleCountAfter': len(roles), 'revisionAfter': (old[0] if old else 0)+1})
+                maestro_audit.record(conn, tenant, actor, 'operators', 'operator.token_rotated', 'operator', id)
                 conn.commit(); handler._respond(200, {'ok': True, 'personalToken': token}); return True
             if method == 'GET' and parsed.path == BASE:
                 tasks = [task_view(r) for r in conn.execute('SELECT * FROM studio_human_tasks WHERE tenant=? ORDER BY rowid DESC LIMIT 500', (tenant,)) if admin and not identity or identity and allowed(r, identity)]

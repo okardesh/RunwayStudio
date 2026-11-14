@@ -1,3 +1,4 @@
+import { auditToken } from './auditIdentity';
 import { useState } from 'react';
 
 const types = ['String', 'Boolean', 'Int32', 'Double', 'Object', 'Secret', 'Credential'];
@@ -11,7 +12,7 @@ export default function MaestroAssets({ apiBase = '' }) {
   const [profileName, setProfileName] = useState(''), [message, setMessage] = useState(''), [busy, setBusy] = useState(false);
   const clear = () => { setName(''); setType('String'); setValue(''); setUsername(''); setPassword(''); setEditing(null); };
   const request = async (suffix = '', data) => {
-    const r = await fetch(apiBase + '/api/v1/studio-assets' + suffix, { method: data === undefined ? 'GET' : 'POST', redirect: 'error', signal: AbortSignal.timeout(12000), headers: { 'X-API-Key': key, 'X-Tenant-Id': 'default', 'Content-Type': 'application/json' }, ...(data === undefined ? {} : { body: JSON.stringify(data) }) });
+    const r = await fetch(apiBase + '/api/v1/studio-assets' + suffix, { method: data === undefined ? 'GET' : 'POST', redirect: 'error', signal: AbortSignal.timeout(12000), headers: { 'X-API-Key': key, 'X-Tenant-Id': 'default', 'X-Runway-Task-Token': auditToken(apiBase), 'Content-Type': 'application/json' }, ...(data === undefined ? {} : { body: JSON.stringify(data) }) });
     const result = await r.json();
     if (!r.ok || result.ok !== true) throw Error(result.error || 'Asset request failed.');
     return result;

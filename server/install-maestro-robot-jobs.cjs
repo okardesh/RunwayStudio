@@ -47,6 +47,14 @@ if (page && !page.includes('import MaestroHumanTasks')) {
   if (!page.includes(anchor) || !page.includes(tab) || !page.includes(render)) throw Error('Unrecognized Maestro RPA page. No files changed.');
   page = page.replace(anchor, anchor + '\nimport MaestroHumanTasks from "./MaestroHumanTasks";').replace(tab, tab + "\n            { id: 'human', label: 'Human Tasks' },").replace(render, render + " activeTab === 'human' ? <MaestroHumanTasks apiBase={API_BASE} /> :");
 }
+const auditFiles = ['maestro_audit.py', 'maestro_ui/MaestroAudit.jsx', 'maestro_ui/auditIdentity.js'];
+const auditCopies = auditFiles.map(name => [path.resolve(directory, name.startsWith('maestro_ui/') ? 'src/components/' + path.basename(name) : name), fs.readFileSync(path.join(__dirname, name), 'utf8')]);
+for (const [file, text] of auditCopies) if (!updating && fs.existsSync(file) && fs.readFileSync(file, 'utf8') !== text) throw Error('Existing audit files differ. Review before --update.');
+if (page && !page.includes('import MaestroAudit')) {
+  const anchor = 'import MaestroHumanTasks from "./MaestroHumanTasks";', tab = "{ id: 'human', label: 'Human Tasks' },", render = "activeTab === 'human' ? <MaestroHumanTasks apiBase={API_BASE} /> :";
+  if (!page.includes(anchor) || !page.includes(tab) || !page.includes(render)) throw Error('Unrecognized Maestro RPA page. No files changed.');
+  page = page.replace(anchor, anchor + '\nimport MaestroAudit from "./MaestroAudit";').replace(tab, tab + "\n            { id: 'audit', label: 'Audit Log' },").replace(render, render + " activeTab === 'audit' ? <MaestroAudit apiBase={API_BASE} /> :");
+}
 if (!source.includes('import maestro_robot_jobs')) {
   for (const method of ['GET', 'POST']) {
     const expression = new RegExp(`(^[ \\t]+)if context_repository\\.handle\\(self, '${method}', parsed\\):`, 'm');
@@ -57,6 +65,7 @@ if (!source.includes('import maestro_robot_jobs')) {
   if (!/^import department_store\r?$/m.test(source)) throw Error('Unrecognized Maestro imports. No files were changed.');
   source = source.replace(/^import department_store\r?$/m, 'import department_store\nimport maestro_robot_jobs');
 }
+for (const [file, text] of auditCopies) { if (file.endsWith('.py') || page) fs.writeFileSync(file, text); }
 fs.writeFileSync(assetsTarget, assetsText); fs.writeFileSync(queuesTarget, queuesText); fs.writeFileSync(target, moduleText); fs.writeFileSync(file, source);
 fs.writeFileSync(humanTarget, humanText);
 if (page) { fs.writeFileSync(uiPath, uiText); fs.writeFileSync(queueUiPath, queueUiText); fs.writeFileSync(humanUiPath, humanUiText); fs.writeFileSync(pagePath, page); }

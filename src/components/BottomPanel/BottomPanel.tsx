@@ -11,6 +11,7 @@ import { TestExplorer } from '../TestExplorer/TestExplorer';
 import { WorkflowAnalyzerPanel } from '../WorkflowAnalyzer/WorkflowAnalyzerPanel';
 
 import { QueuesPanel } from '../Queues/QueuesPanel';
+import { AuditPanel } from '../Audit/AuditPanel';
 import { HumanTasksPanel } from '../HumanTasks/HumanTasksPanel';
 import { AssetsPanel } from '../Assets/AssetsPanel';
 import { RobotJobsPanel } from '../RobotJobs/RobotJobsPanel';
@@ -137,6 +138,7 @@ export function BottomPanel({ connection = null }: { connection?: RunwayConnecti
     { id: 'dataManager' as BottomPanelTab, label: 'Data Manager' },
     { id: 'output' as BottomPanelTab, label: 'Output' },
     { id: 'queues' as BottomPanelTab, label: 'Queues' },
+    { id: 'audit' as BottomPanelTab, label: 'Audit Log' },
     { id: 'human' as BottomPanelTab, label: 'Human Tasks' },
     { id: 'assets' as BottomPanelTab, label: 'Assets' },
     { id: 'jobs' as BottomPanelTab, label: 'Robot Jobs' },
@@ -156,7 +158,7 @@ export function BottomPanel({ connection = null }: { connection?: RunwayConnecti
   ];
 
   return (
-    <div className={`bottom-panel${mainTab === 'queues' ? ' bottom-panel--queues' : mainTab === 'assets' ? ' bottom-panel--assets' : mainTab === 'jobs' ? ' bottom-panel--jobs' : mainTab === 'history' ? ' bottom-panel--history' : mainTab === 'targets' ? ' bottom-panel--targets' : mainTab === 'debug' ? ' bottom-panel--debug' : mainTab === 'tests' ? ' bottom-panel--tests' : mainTab === 'errors' ? ' bottom-panel--analyzer' : ''}`}>
+    <div className={`bottom-panel${mainTab === 'audit' ? ' bottom-panel--audit' : mainTab === 'queues' ? ' bottom-panel--queues' : mainTab === 'assets' ? ' bottom-panel--assets' : mainTab === 'jobs' ? ' bottom-panel--jobs' : mainTab === 'history' ? ' bottom-panel--history' : mainTab === 'targets' ? ' bottom-panel--targets' : mainTab === 'debug' ? ' bottom-panel--debug' : mainTab === 'tests' ? ' bottom-panel--tests' : mainTab === 'errors' ? ' bottom-panel--analyzer' : ''}`}>
       <div className="bp__tab-row">
         <div className="bp__main-tabs">
           {mainTabs.map(({ id, label }) => (
@@ -165,7 +167,7 @@ export function BottomPanel({ connection = null }: { connection?: RunwayConnecti
               className={`bp__main-tab${mainTab === id ? ' bp__main-tab--active' : ''}`}
               onClick={() => setActiveBottomPanelTab(id)}
             >
-              <Icon name={({ dataManager: 'data', output: 'terminal', history: 'history', jobs: 'play', assets: 'shield', queues: 'layers', human: 'shield', targets: 'cursor', debug: 'code', tests: 'shield', markers: 'layers', errors: 'alert' } as Record<BottomPanelTab, IconName>)[id]} size={14} />{label}
+              <Icon name={({ dataManager: 'data', output: 'terminal', history: 'history', jobs: 'play', assets: 'shield', queues: 'layers', human: 'shield', audit: 'history', targets: 'cursor', debug: 'code', tests: 'shield', markers: 'layers', errors: 'alert' } as Record<BottomPanelTab, IconName>)[id]} size={14} />{label}
             </button>
           ))}
         </div>
@@ -189,6 +191,7 @@ export function BottomPanel({ connection = null }: { connection?: RunwayConnecti
         <div hidden={mainTab !== 'jobs'} style={{ height: '100%', minHeight: 0 }}><RobotJobsPanel connection={connection} /></div>
         <div hidden={mainTab !== 'assets'} style={{ height: '100%', minHeight: 0 }}><AssetsPanel /></div>
         {mainTab === 'queues' && <QueuesPanel />}
+        {mainTab === 'audit' && <AuditPanel connection={connection} />}
         {mainTab === 'human' && <HumanTasksPanel connection={connection} />}
         {mainTab === 'history' && <RunHistoryPanel />}
         <div hidden={mainTab !== 'errors'} style={{ height: '100%', minHeight: 0 }}><WorkflowAnalyzerPanel /></div>

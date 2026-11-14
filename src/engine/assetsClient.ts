@@ -1,13 +1,15 @@
+import { auditToken } from '../../server/maestro_ui/auditIdentity';
 import type { RunwayConnection } from './runwayConnection';
 import { assetTypes, validAssetName, type AssetCatalog, type AssetResolver, type AssetType } from '../shared/assets';
 export async function assetsRequest(connection: RunwayConnection, path = '', payload?: unknown): Promise<any> {
   if (!connection.accessToken) throw Error('Connect Studio to Maestro before using assets.');
   const url = new URL('/api/v1/studio-assets' + path, connection.serverUrl).toString();
+  const personalToken = auditToken(connection.serverUrl + '|' + connection.organizationId);
   let result;
   try {
     const bridge = (window as any).electronAPI?.requestStudioAssets;
-    if (bridge) result = await bridge(url, connection.accessToken, connection.organizationId, payload === undefined ? 'GET' : 'POST', payload);
-    else { const response = await fetch(url, { method: payload === undefined ? 'GET' : 'POST', redirect: 'error', signal: AbortSignal.timeout(12000), headers: { 'X-API-Key': connection.accessToken, 'X-Tenant-Id': connection.organizationId, 'Content-Type': 'application/json' }, ...(payload === undefined ? {} : { body: JSON.stringify(payload) }) }); result = { status: response.status, body: await response.text() }; }
+    if (bridge) result = await bridge(url, connection.accessToken, connection.organizationId, payload === undefined ? 'GET' : 'POST', payload, personalToken);
+    else { const response = await fetch(url, { method: payload === undefined ? 'GET' : 'POST', redirect: 'error', signal: AbortSignal.timeout(12000), headers: { 'X-API-Key': connection.accessToken, 'X-Tenant-Id': connection.organizationId, 'Content-Type': 'application/json', 'X-Runway-Task-Token': personalToken }, ...(payload === undefined ? {} : { body: JSON.stringify(payload) }) }); result = { status: response.status, body: await response.text() }; }
     if (result.networkError) throw Error();
   } catch { throw Error('Maestro assets could not be reached. No fallback environment was used.'); }
   if (result.status === 409) throw Error('This asset changed. Refresh its details before saving.');

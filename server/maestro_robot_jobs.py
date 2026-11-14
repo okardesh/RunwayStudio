@@ -14,6 +14,7 @@ from urllib.parse import urlsplit, urlunsplit
 import maestro_assets
 import maestro_queues
 import maestro_human_tasks
+import maestro_audit
 
 BASE = '/api/v1/robot-jobs'
 TERMINAL = {'success', 'failed', 'stopped'}
@@ -154,14 +155,17 @@ def _save(host, tenant, job):
     job = _masked(job)
     with _db(host) as conn:
         conn.execute('BEGIN IMMEDIATE')
-        previous = conn.execute('SELECT snapshot FROM studio_robot_jobs WHERE id=? AND organization_id=?', (job['jobId'], tenant)).fetchone()
+        previous = conn.execute('SELECT snapshot,bot_id FROM studio_robot_jobs WHERE id=? AND organization_id=?', (job['jobId'], tenant)).fetchone()
         if not previous:
             raise ValueError('Job not found.')
+        bot_id = previous[1]
         previous = json.loads(previous[0])
         if previous['status'] in TERMINAL:
             return previous
         if previous.get('environment'):
             job['environment'] = previous['environment']
+        if previous['status'] != job['status']:
+            maestro_audit.record(conn, tenant, 'robot:'+str(bot_id)[:150], 'jobs', 'job.'+job['status'], 'job', job['jobId'], job_id=job['jobId'], metadata={'status': job['status']}, outcome='failed' if job['status']=='failed' else 'success')
         if job['status'] in TERMINAL:
             maestro_human_tasks.finish(conn, tenant, job['jobId'])
             recovered = maestro_queues.release_owner(conn, tenant, 'job:' + job['jobId'])
@@ -190,6 +194,7 @@ def _callback_base(handler, host):
 
 
 def handle(handler, method, parsed, host):
+    if maestro_audit.handle(handler, method, parsed, host): return True
     maestro_human_tasks.start(host, _call, _save)
     if maestro_human_tasks.handle(handler, method, parsed, host): return True
     if maestro_queues.handle(handler, method, parsed, host):
@@ -311,6 +316,7 @@ def handle(handler, method, parsed, host):
                 selected, refs, asset_token = maestro_assets.prepare_grant(host, tenant, data.get('environmentId', 'default'), item['definition'], job_id, conn)
                 view = {'jobId': job_id, 'status': 'queued', 'startedAt': now, 'logs': [], 'environment': selected}
                 conn.execute('INSERT INTO studio_robot_jobs VALUES (?,?,?,?,?,?,?,?,?)', (job_id, tenant, data['requestId'], fingerprint, bot_id, item['id'], item['version'], manifest['id'], json.dumps(view)))
+                maestro_audit.record(conn, tenant, maestro_audit.identity(conn, tenant, handler.headers, host), 'jobs', 'job.submitted', 'job', job_id, job_id=job_id, profile_id=selected['id'])
                 maestro_assets.save_grant(conn, tenant, selected['id'], refs, asset_token, job_id)
                 maestro_queues.prepare_grant(conn, tenant, selected['id'], item['definition'], job_id)
                 maestro_human_tasks.register(conn, tenant, job_id, item['definition'], _callback_base(handler, host) + BASE + '/' + job_id + '/complete')
@@ -348,6 +354,8 @@ def handle(handler, method, parsed, host):
             respond(200, {'ok': True, 'job': view})
             return True
         respond(404, {'ok': False, 'error': 'Robot Jobs route not found.'})
+    except PermissionError as error:
+        respond(403, {'ok': False, 'error': str(error)})
     except ValueError as error:
         respond(400, {'ok': False, 'error': str(error)})
     except Exception:
