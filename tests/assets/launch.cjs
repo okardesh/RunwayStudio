@@ -45,17 +45,17 @@ async function uiTest() {
   const { chromium } = require('playwright-core'); const browser = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); const errors = []; page.on('pageerror', e => errors.push(e.message)); await page.goto(pathToFileURL(path.join(out, 'index.html')).href); await page.locator('.app-header').waitFor();
-    await page.getByRole('button', { name: 'Assets', exact: true }).first().click(); const panel = page.getByRole('region', { name: 'Assets and environments' });
-    await panel.getByLabel('Asset environment', { exact: true }).selectOption('development');
-    await panel.getByLabel('Asset name', { exact: true }).fill('ERP_Login'); await panel.getByLabel('Asset type', { exact: true }).selectOption('Credential');
-    await panel.getByLabel('Credential username', { exact: true }).fill('ui-private-user'); await panel.getByLabel('Credential password', { exact: true }).fill('ui-private-password'); await panel.getByRole('button', { name: 'Save asset', exact: true }).click();
-    await panel.getByRole('button').filter({ hasText: 'ERP_Login' }).waitFor(); assert.equal(await panel.getByLabel('Asset name', { exact: true }).inputValue(), '');
-    assert.ok(!await page.evaluate(() => JSON.stringify(localStorage).includes('ui-private-password')));
-    await panel.getByRole('button').filter({ hasText: 'ERP_Login' }).click(); assert.equal(await panel.getByLabel('Credential password', { exact: true }).inputValue(), '');
-    await page.screenshot({ path: path.join(out, 'assets-dark.png') }); await page.getByRole('button', { name: 'Light', exact: true }).click(); await page.screenshot({ path: path.join(out, 'assets-light.png') });
-    await panel.getByLabel('New environment name', { exact: true }).fill('Test'); await panel.getByRole('button', { name: 'Add environment', exact: true }).click(); await panel.getByLabel('Asset environment', { exact: true }).selectOption('test');
+    assert.equal(await page.getByRole('button', { name: 'Assets', exact: true }).count(), 0);
+    assert.equal(await page.getByRole('button', { name: 'Audit', exact: true }).count(), 0);
+    assert.equal(await page.getByRole('region', { name: 'Assets and environments' }).count(), 0);
+    await page.getByLabel('Run environment', { exact: true }).selectOption('development');
+    assert.equal(await page.getByLabel('Run environment', { exact: true }).inputValue(), 'development');
+    assert.ok(await page.evaluate(() => Object.values(localStorage).includes('development')));
+    await page.screenshot({ path: path.join(out, 'environment-dark.png') }); await page.getByRole('button', { name: 'Light', exact: true }).click(); await page.screenshot({ path: path.join(out, 'environment-light.png') });
+    await page.getByRole('button', { name: 'Jobs', exact: true }).click(); await page.getByLabel('Job environment', { exact: true }).waitFor();
+    assert.deepEqual(await page.evaluate(() => window.calls), []);
     await page.setViewportSize({ width: 1100, height: 750 }); assert.equal(await page.evaluate(() => document.body.scrollWidth > innerWidth), false); assert.deepEqual(errors, []);
-    console.log('PASS Assets UI create credential, clear protected fields, metadata-only edit, environment management, Dark/Light and compact layout');
+    console.log('PASS Studio consumes Runway assets, local/Robot Job environment selection, no Assets/Audit management or writes, Dark/Light and compact layout');
   } finally { await browser.close(); }
 }
 main().catch(e => { console.error(e); process.exitCode = 1; });

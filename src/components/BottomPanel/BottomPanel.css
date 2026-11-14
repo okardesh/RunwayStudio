@@ -249,5 +249,3 @@
   font-size: 11px;
   text-align: center;
 }
-
-.app .bottom-panel.bottom-panel--audit { height: clamp(340px, 48vh, 550px); }

@@ -4,7 +4,7 @@ import { ActivityPanel } from './components/ActivityPanel/ActivityPanel';
 import { SequenceCanvas } from './components/SequenceCanvas/SequenceCanvas';
 import { PropertiesPanel } from './components/PropertiesPanel/PropertiesPanel';
 import { StatusBar } from './components/StatusBar/StatusBar';
-import { AssetsMonitor, EnvironmentIndicator } from './components/Assets/AssetsPanel';
+import { AssetsMonitor, EnvironmentIndicator } from './components/Assets/EnvironmentSelector';
 import { RobotJobsMonitor } from './components/RobotJobs/RobotJobsPanel';
 import { BottomPanel } from './components/BottomPanel/BottomPanel';
 import { useWorkflowStore } from './store/workflowStore';

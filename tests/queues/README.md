@@ -1,6 +1,6 @@
 # Queues and transaction processing
 
-Open **Queues** in Studio's toolbar or bottom panel. It uses the environment selected for local Run/Debug in **Assets**. The Maestro RPA page has the same **Queues** management tab. Create a queue, configure retries/delay/lease duration, add JSON work with a unique business reference, and inspect item status, attempt, retry count and error reason. Environment queues are separate even when their names match.
+Open **RPA → Queues** in Runway/Maestro to create and manage queues, retries/delay/lease duration, and inspect work. Studio only consumes existing queues through activities in **Queues & Transactions**. Enter the existing queue name in activity properties and select the local Run/Debug environment in the header. Matching names in different environments refer to separate queues.
 
 Use the **Queues** activity category:
 
