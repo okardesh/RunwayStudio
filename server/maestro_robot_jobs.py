@@ -12,6 +12,7 @@ from datetime import datetime
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 from urllib.parse import urlsplit, urlunsplit
 import maestro_assets
+import maestro_queues
 
 BASE = '/api/v1/robot-jobs'
 TERMINAL = {'success', 'failed', 'stopped'}
@@ -151,6 +152,7 @@ def _call(host, tenant, bot_id, method, suffix='', payload=None):
 def _save(host, tenant, job):
     job = _masked(job)
     with _db(host) as conn:
+        conn.execute('BEGIN IMMEDIATE')
         previous = conn.execute('SELECT snapshot FROM studio_robot_jobs WHERE id=? AND organization_id=?', (job['jobId'], tenant)).fetchone()
         if not previous:
             raise ValueError('Job not found.')
@@ -159,6 +161,10 @@ def _save(host, tenant, job):
             return previous
         if previous.get('environment'):
             job['environment'] = previous['environment']
+        if job['status'] in TERMINAL:
+            recovered = maestro_queues.release_owner(conn, tenant, 'job:' + job['jobId'])
+            for item in recovered:
+                job.setdefault('transactions', []).append({'itemId': item['id'], 'queueName': item['queueName'], 'reference': item['reference'], 'attempt': item['attempt'], 'status': item['status'], 'errorType': item['errorType'], 'reason': item['reason'], 'at': int(time.time() * 1000)})
         conn.execute('UPDATE studio_robot_jobs SET snapshot=? WHERE id=? AND organization_id=?', (json.dumps(job), job['jobId'], tenant))
         conn.execute('''UPDATE rpa_jobs SET status=?, outputs=?, log=?, error=?, started_at=?, completed_at=?
                         WHERE id=? AND organization_id=?''', (job['status'], json.dumps(job.get('outputs', {})), json.dumps(job['logs']), job.get('error', ''), job['startedAt'], job.get('completedAt'), job['jobId'], tenant))
@@ -182,12 +188,29 @@ def _callback_base(handler, host):
 
 
 def handle(handler, method, parsed, host):
+    if maestro_queues.handle(handler, method, parsed, host):
+        return True
     if maestro_assets.handle(handler, method, parsed, host):
         return True
     if parsed.path != BASE and not parsed.path.startswith(BASE + '/'):
         return False
     respond = handler._respond
     try:
+        queue_match = re.fullmatch(BASE + r'/([a-zA-Z0-9_-]{1,120})/queues/operate', parsed.path)
+        if method == 'POST' and queue_match:
+            job_id = queue_match[1]
+            with _db(host) as conn:
+                ticket = conn.execute('SELECT organization_id,bot_id FROM studio_robot_jobs WHERE id=?', (job_id,)).fetchone()
+            if not ticket:
+                raise ValueError('Job not found.')
+            row = _bot(host, ticket[0], ticket[1]); key = str(row[10] or host['_get_active_api_key']())
+            if not key or not hmac.compare_digest(handler.headers.get('X-API-Key', ''), key):
+                respond(401, {'ok': False, 'error': 'Unauthorized Robot.'}); return True
+            grant = maestro_assets.authorize_job(host, job_id, handler.headers.get('X-Runway-Job-Token', ''))
+            with maestro_queues.database(host, grant['tenant']) as conn:
+                allowed = conn.execute('SELECT refs FROM studio_job_queue_grants WHERE job_id=?', (job_id,)).fetchone()
+            result = maestro_queues.operate(host, grant['tenant'], grant['profileId'], 'job:' + job_id, handler._read_json_body() or {}, json.loads(allowed[0]) if allowed else [])
+            respond(200, {'ok': True, **result}); return True
         asset_match = re.fullmatch(BASE + r'/([a-zA-Z0-9_-]{1,120})/assets/resolve', parsed.path)
         if method == 'POST' and asset_match:
             with _db(host) as conn:
@@ -233,7 +256,7 @@ def handle(handler, method, parsed, host):
             for item in host['_list_rpa_workflows'](tenant):
                 try:
                     manifest, args = _portable(item)
-                    packages.append({'workflowId': item['id'], 'name': item['name'], 'version': item['version'], 'packageId': manifest['id'], 'inputArguments': args, 'requiredAssets': maestro_assets.requirements(item['definition'])})
+                    packages.append({'workflowId': item['id'], 'name': item['name'], 'version': item['version'], 'packageId': manifest['id'], 'inputArguments': args, 'requiredAssets': maestro_assets.requirements(item['definition']), 'requiredQueues': maestro_queues.requirements(item['definition'])})
                 except (ValueError, TypeError, AttributeError):
                     continue
             with maestro_assets.database(host, tenant) as conn:
@@ -247,7 +270,7 @@ def handle(handler, method, parsed, host):
             if not isinstance(data, dict) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,120}', str(data.get('requestId', ''))):
                 raise ValueError('Invalid request ID.')
             fingerprint = hashlib.sha256(json.dumps(data, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
-            with maestro_assets.database(host, tenant):
+            with maestro_queues.database(host, tenant):
                 pass
             # Durable reservation is made before network dispatch, with a unique tenant/request key.
             with _db(host) as conn:
@@ -273,6 +296,7 @@ def handle(handler, method, parsed, host):
                 view = {'jobId': job_id, 'status': 'queued', 'startedAt': now, 'logs': [], 'environment': selected}
                 conn.execute('INSERT INTO studio_robot_jobs VALUES (?,?,?,?,?,?,?,?,?)', (job_id, tenant, data['requestId'], fingerprint, bot_id, item['id'], item['version'], manifest['id'], json.dumps(view)))
                 maestro_assets.save_grant(conn, tenant, selected['id'], refs, asset_token, job_id)
+                maestro_queues.prepare_grant(conn, tenant, selected['id'], item['definition'], job_id)
                 conn.execute('''INSERT INTO rpa_jobs (id,organization_id,workflow_id,workflow_name,workflow_version,bot_id,status,inputs,created_at)
                                 VALUES (?,?,?,?,?,?,?,?,?)''', (job_id, tenant, item['id'], item['name'], item['version'], bot_id, 'queued', json.dumps(_masked(data['inputs'])), now))
             # Packaged Maestro advertises loopback to its own UI. Remote Robots need the

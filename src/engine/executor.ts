@@ -12,6 +12,9 @@ import { argumentValue, cloneArgument, initializeArguments, loadWorkflowGraph, r
 import { loadInvokedWorkflow } from './workflowLoader';
 import { executeAssetActivity, protectDerivedValues, type AssetResolver } from '../shared/assets';
 import { assetRunContext } from '../store/assetsStore';
+import { useAssetsStore } from '../store/assetsStore';
+import { QueueRunSession, executeQueueActivity, queueActivities } from '../shared/queues';
+import { createQueueSession } from './queuesClient';
 import type { UiTarget } from '../shared/uiTargets';
 
 export type LogLevel = 'Info' | 'Warning' | 'Error' | 'Debug';
@@ -165,6 +168,7 @@ function resolveCollectionValue(value: unknown, values: Record<string, unknown>)
 }
 
 export interface DebugOptions {
+  queueSession?: QueueRunSession;
   assetContext?: { resolve?: AssetResolver; environment?: { id: string; name: string } };
   arguments?: WorkflowArgument[];
   loadWorkflow?: WorkflowLoader;
@@ -179,14 +183,16 @@ export interface DebugOptions {
   onResume?: () => void;
 }
 
-interface ExecutionSession { assets?: AssetResolver; environment?: { id: string; name: string }; graph?: WorkflowGraph; targets: UiTarget[]; frames: DebugFrame[]; rootRunId?: string; step: 'run' | StepMode; stepOverDepth: number }
+interface ExecutionSession { queues?: QueueRunSession; assets?: AssetResolver; environment?: { id: string; name: string }; graph?: WorkflowGraph; targets: UiTarget[]; frames: DebugFrame[]; rootRunId?: string; step: 'run' | StepMode; stepOverDepth: number }
 interface ExecutionFrame { depth: number; parentRunId?: string; invocationNodeId?: string; inheritedSecrets?: string[] }
 interface ExecutionResult { status: 'completed' | 'stopped' | 'error'; values: Record<string, unknown>; secrets: string[] }
 export async function executeWorkflow(nodes: Node<WorkflowNodeData>[], edges: Edge[], variables: WorkflowVariable[], onNodeStart: (id: string) => void, onNodeEnd: (id: string) => void, onLog: LogFn, options?: DebugOptions): Promise<'completed' | 'stopped' | 'error'> {
   if (_executing) throw Error('Another workflow is already running. Stop it before starting a new run.');
   _executing = true; _stopRequested = false;
   const assets = options?.assetContext ?? assetRunContext();
-  const session: ExecutionSession = { assets: assets.resolve, environment: assets.environment, targets: JSON.parse(JSON.stringify(useUiTargetStore.getState().targets)), frames: [], step: 'run', stepOverDepth: 0 };
+  const c = useAssetsStore.getState().connection;
+  const queues = options?.queueSession ?? (c ? createQueueSession({ ...c }, assets.environment?.id ?? 'default') : undefined);
+  const session: ExecutionSession = { queues, assets: assets.resolve, environment: assets.environment, targets: JSON.parse(JSON.stringify(useUiTargetStore.getState().targets)), frames: [], step: 'run', stepOverDepth: 0 };
   try { return (await executeWorkflowRecorded(nodes, edges, variables, onNodeStart, onNodeEnd, onLog, options, session, { depth: 0 })).status; }
   finally { _executing = false; _resumeResolver = null; useDebugStore.setState({ frames: [] }); }
 }
@@ -242,6 +248,11 @@ async function executeWorkflowRecorded(
     };
     let result = await executeWorkflowCore(resolvedNodes, edges, variables, onNodeStart, onNodeEnd, protectedLog, trace, debugOptions, live, session, frame.depth, publishFrame, invoke, (values) => { finalValues = values; });
     if (_stopRequested) result = 'stopped';
+    if (frame.depth === 0 && session.queues) {
+      if (result === 'completed' && session.queues.activeCount) { result = 'error'; trace.error('A claimed transaction has no committed result. Add Set Transaction Status.'); }
+      await session.queues.close();
+    }
+    if (session.queues) trace.transactions(session.queues.events);
     if (result === 'completed') for (const arg of debugOptions?.arguments ?? []) if (arg.direction === 'Out') {
       try { finalValues[arg.name] = argumentValue(finalValues[arg.name], arg.type); } catch { throw Error(`Output argument "${arg.name}" does not match its declared ${arg.type} type.`); }
     }
@@ -250,6 +261,8 @@ async function executeWorkflowRecorded(
     return { status: result, values: finalValues, secrets: trace.secrets };
   } catch (error) {
     const status = _stopRequested ? 'stopped' : 'error';
+    if (frame.depth === 0) try { await session.queues?.close(); } catch { protectedLog('Transaction cleanup could not be confirmed. Lease expiry will recover uncommitted work.', 'Warning'); }
+    if (session.queues) trace.transactions(session.queues.events);
     if (frame.depth === 0) live?.finish(status);
     if (!_stopRequested) protectedLog(error instanceof Error ? error.message : String(error), 'Error');
     await trace.finish(status, _stopRequested ? undefined : error);
@@ -298,6 +311,13 @@ async function executeWorkflowCore(
     return success;
   };
   const runWithValuesCore = async (activityId: string, properties: Record<string, unknown>) => {
+    session.queues?.assertHealthy();
+    if (queueActivities.includes(activityId)) {
+      const outputs = await executeQueueActivity(activityId, properties, values, session.queues, trace.secrets);
+      if (_stopRequested) return false;
+      Object.assign(values, outputs); if (session.queues) trace.transactions(session.queues.events);
+      onLog('Central queue operation completed.', 'Info'); return true;
+    }
     if (activityId === 'get-asset' || activityId === 'get-credential') {
       const outputs = await executeAssetActivity(activityId, properties, session.assets, value => { if (!trace.secrets.includes(value)) trace.secrets.push(value); });
       if (_stopRequested) return false;
@@ -343,6 +363,7 @@ async function executeWorkflowCore(
       resolvedProperties.data = resolveCollectionValue(properties.data, values);
     }
     const result = await runActivity(activityId, resolvedProperties, onLog);
+    session.queues?.assertHealthy();
     if (result.outputs) Object.assign(values, result.outputs);
     return result.success;
   };

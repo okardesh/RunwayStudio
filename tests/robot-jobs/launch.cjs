@@ -37,6 +37,12 @@ async function main() {
   assert.ok(!JSON.stringify(registry.get('secret')).includes('PRIVATE-FIXTURE-SECRET'));
   console.log('PASS Retry-delay cancellation without another activity; secret masking in live logs and aliased outputs');
 
+  let finishCleanup, cleaning = false;
+  const finalizing = new e.RobotJobRegistry(native, async () => {}, undefined, () => ({ activeCount: 0, events: [], assertHealthy() {}, close: () => { cleaning = true; return new Promise(resolve => finishCleanup = resolve); } }));
+  finalizing.submit(trigger('finalizing', good)); await waitFor(() => cleaning);
+  assert.equal(finalizing.get('finalizing').status, 'running'); finishCleanup(); await waitFor(() => finalizing.get('finalizing').status === 'success'); assert.deepEqual(finalizing.get('finalizing').transactions, []);
+  console.log('PASS Job stays active until transaction cleanup and history metadata are finalized');
+
   const probe = net.createServer(); await new Promise(r => probe.listen(0, '127.0.0.1', r)); const robotPort = probe.address().port; await new Promise(r => probe.close(r));
   let gateway, serverUrl, offline = false, dropLaunchResponse = false;
   const server = http.createServer(async (req, res) => {
@@ -134,6 +140,14 @@ async function maestroTest(source, packages, robotPort, native, control) {
     const bundle = await engine.buildPortablePackage(definition, path.join(out, 'assets.rpa.json'), [], '4.0.0', async () => { throw Error('No dependency'); });
     packages = [...packages, { workflowId: 'assets', name: 'Asset HTTP fixture', version: '4.0.0', definition: bundle }];
   }
+  if (process.argv.includes('--queues')) {
+    const engine = require(path.join(out, 'engine.cjs'));
+    for (const [version, mode] of [['5.0.0', 'success'], ['6.0.0', 'Application'], ['7.0.0', 'Business'], ['8.0.0', 'stop']]) {
+      const definition = def('Queue HTTP ' + mode, [node('add', 'add-queue-item', { queueName: 'Invoices', reference: '{{reference}}', content: '{"amount":42}' }), node('get', 'get-transaction-item', { queueName: 'Invoices', output: 'transaction', hasItemOutput: 'hasTransaction' }), ...(mode === 'stop' ? [node('hold', 'delay', { duration: 5 })] : []), node('set', 'set-transaction-status', { transaction: '{{transaction}}', status: mode === 'success' || mode === 'stop' ? 'Successful' : 'Failed', errorType: mode, reason: 'Expected ' + mode })], [arg('reference')]);
+      const bundle = await engine.buildPortablePackage(definition, path.join(out, 'queue.rpa.json'), [], version, async () => { throw Error('No dependency'); });
+      packages = [...packages, { workflowId: 'queue', name: 'Queue HTTP ' + mode, version, definition: bundle }];
+    }
+  }
   const config = path.join(out, 'maestro-config.json'); fs.writeFileSync(config, JSON.stringify({ packages, robotUrl: 'http://127.0.0.1:' + robotPort + '/api/robot/jobs' }));
   const start = async () => {
     const child = spawn(python, [path.join(__dirname, 'maestroFixture.py'), source, config], { windowsHide: true, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' }, stdio: ['ignore', 'pipe', 'pipe'] }); let errors = '';
@@ -148,6 +162,7 @@ async function maestroTest(source, packages, robotPort, native, control) {
   try {
     assert.deepEqual(await global.robotIpc.get('robot:connect')(null, service.url), { ok: true });
     if (process.argv.includes('--assets')) await assetHttpTest(service.url, packages.find(p => p.workflowId === 'assets').definition);
+    if (process.argv.includes('--queues')) await queueHttpTest(service.url, packages.filter(p => p.workflowId === 'queue'), control);
     const r = { requestId: crypto.randomUUID(), robotId: 'r1', workflowId: 'published-1.0.0', version: '1.0.0', packageId: packages[0].definition.portablePackage.id, inputs: { greeting: 'Maestro durable result', count: 8 } };
     const created = await (await post(service.url + '/api/v1/robot-jobs', r)).json(); assert.ok(created.jobId);
     await waitFor(async () => (await (await fetch(service.url + '/api/v1/robot-jobs/' + created.jobId, { headers: { 'X-API-Key': 'studio-fixture-key' } })).json()).job?.status === 'success');
@@ -190,5 +205,35 @@ async function assetHttpTest(url, bundle) {
   await request('/api/v1/studio-assets/profiles', { id: 'production', name: 'production', enabled: false }); assert.equal((await submit('production')).status, 400);
   await request('/api/v1/studio-assets/values', { profileId: 'development', name: 'Retries', revision: 1, delete: true }); assert.equal((await submit('development')).status, 400);
   console.log('PASS Production Robot → Python Maestro scoped credential retrieval, pinned environments, typed assets, redacted callbacks/history, updates without republish and missing/disabled preflight');
+}
+async function queueHttpTest(url, packages, control) {
+  const request = async (route, body) => {
+    const r = await fetch(url + route, { method: body === undefined ? 'GET' : 'POST', headers: { 'X-API-Key': 'studio-fixture-key', 'Content-Type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    return { status: r.status, body: await r.json() };
+  };
+  const configure = async (revision, enabled = true) => assert.equal((await request('/api/v1/studio-queues/configure', { profileId: 'default', name: 'Invoices', enabled, maxRetries: 1, retryDelaySeconds: 3600, leaseSeconds: 30, revision })).status, 200);
+  await configure(0);
+  const catalog = (await request('/api/v1/robot-jobs/catalog')).body;
+  assert.deepEqual(catalog.packages.find(p => p.version === '5.0.0').requiredQueues[0].operations, ['add', 'claim', 'complete']);
+  for (const pkg of packages) {
+    const reference = 'INV-' + pkg.version;
+    const created = await request('/api/v1/robot-jobs', { requestId: crypto.randomUUID(), robotId: 'r1', workflowId: 'queue-' + pkg.version, version: pkg.version, packageId: pkg.definition.portablePackage.id, inputs: { reference }, environmentId: 'default' });
+    assert.equal(created.status, 202, JSON.stringify(created.body));
+    if (pkg.version === '8.0.0') {
+      await waitFor(control.held); assert.equal((await request('/api/v1/robot-jobs/' + created.body.jobId + '/stop', {})).status, 200); control.release();
+    }
+    let view; await waitFor(async () => { view = (await request('/api/v1/robot-jobs/' + created.body.jobId)).body.job; return ['success', 'failed', 'stopped'].includes(view?.status); });
+    assert.equal(view.status, pkg.version === '8.0.0' ? 'stopped' : 'success', view.error);
+    const expected = pkg.version === '5.0.0' ? 'successful' : pkg.version === '7.0.0' ? 'failed' : 'retry';
+    assert.equal(view.transactions.at(-1).status, expected, JSON.stringify(view.transactions));
+    assert.ok(!/leaseToken|lease_hash|leaseToken|assetContext/.test(JSON.stringify(view)));
+    const items = (await request('/api/v1/studio-queues?profileId=default&queueName=Invoices')).body.items;
+    assert.equal(items.find(item => item.reference === reference).status, expected);
+    assert.equal((await request('/api/v1/robot-jobs/' + created.body.jobId + '/queues/operate', { operation: 'claim', queueName: 'Invoices', requestId: 'denied' })).status, 401);
+    await waitFor(async () => !(await (await fetch(new URL('/health', 'http://127.0.0.1:' + process.env.RUNWAY_ROBOT_PORT))).json()).activeJob);
+  }
+  await configure(1, false);
+  const pkg = packages[0]; assert.equal((await request('/api/v1/robot-jobs', { requestId: crypto.randomUUID(), robotId: 'r1', workflowId: 'queue-' + pkg.version, version: pkg.version, packageId: pkg.definition.portablePackage.id, inputs: { reference: 'disabled' } })).status, 400);
+  console.log('PASS Production Robot → Maestro queue grants, success, Application retry, final Business failure, controlled stop, persisted transaction history and disabled queue preflight');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

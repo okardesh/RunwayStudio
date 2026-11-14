@@ -281,6 +281,7 @@ export function Toolbar({ activeTab, onPublish }: ToolbarProps) {
             <span className="rbn-btn__icon rbn-btn__icon--lg"><Icon name="terminal" /></span>
             <span className="rbn-btn__label">Output</span>
           </button>
+          <button className={`rbn-btn${activeBottomPanelTab === 'queues' ? ' active' : ''}`} onClick={() => setActiveBottomPanelTab('queues')} title="Show Queues and Transactions"><Icon name="layers" /><span className="rbn-btn__label">Queues</span></button>
           <button className={`rbn-btn${activeBottomPanelTab === 'assets' ? ' active' : ''}`} onClick={() => setActiveBottomPanelTab('assets')} title="Show Assets and Environments"><Icon name="shield" /><span className="rbn-btn__label">Assets</span></button>
           <button className={`rbn-btn${activeBottomPanelTab === 'jobs' ? ' active' : ''}`} onClick={() => setActiveBottomPanelTab('jobs')} title="Show Robot Jobs"><Icon name="play" /><span className="rbn-btn__label">Jobs</span></button>
           <button className={`rbn-btn${activeBottomPanelTab === 'history' ? ' active' : ''}`} onClick={() => setActiveBottomPanelTab('history')} title="Show Run History"><Icon name="history" /><span className="rbn-btn__label">History</span></button>

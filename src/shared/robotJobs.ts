@@ -6,6 +6,7 @@ export interface RobotJobLog { sequence: number; timestamp: string; level: 'info
 export interface RobotJobView {
   jobId: string; status: RobotJobStatus; startedAt: number; completedAt?: number;
   environment?: { id: string; name: string };
+  transactions?: import('./queues').TransactionEvent[];
   logs: RobotJobLog[]; outputs?: unknown; error?: string;
   package?: { id: string; version: string };
   workflowCalls?: Array<{ name: string; depth: number; status: string }>;
@@ -13,7 +14,7 @@ export interface RobotJobView {
 export interface RobotChoice { id: string; name: string; online: boolean }
 export interface JobPackageChoice {
   workflowId: string; name: string; version: string; packageId: string;
-  inputArguments: WorkflowArgument[]; requiredAssets?: import('./assets').AssetRequirement[];
+  inputArguments: WorkflowArgument[]; requiredAssets?: import('./assets').AssetRequirement[]; requiredQueues?: Array<{name: string; operations: string[]}>;
 }
 export interface RobotJobCatalog { robots: RobotChoice[]; packages: JobPackageChoice[]; environments?: import('./assets').EnvironmentProfile[] }
 export interface RobotJobRequest {

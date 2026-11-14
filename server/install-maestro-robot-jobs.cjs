@@ -7,14 +7,21 @@ const file = path.resolve(directory, 'script_server.py'), target = path.resolve(
 let source = fs.readFileSync(file, 'utf8');
 // Maestro's RPA UI runs on a separate local port and authenticates asset requests by key.
 source = source.replace('Content-Type, Authorization, X-Tenant-Id', 'Content-Type, Authorization, X-API-Key, X-Tenant-Id');
+if (!source.includes('X-Runway-Queue-Session')) source = source.replace('Content-Type, Authorization, X-API-Key,', 'Content-Type, Authorization, X-API-Key, X-Runway-Queue-Session,');
 const moduleText = fs.readFileSync(path.join(__dirname, 'maestro_robot_jobs.py'), 'utf8');
 const assetsTarget = path.resolve(directory, 'maestro_assets.py');
 const assetsText = fs.readFileSync(path.join(__dirname, 'maestro_assets.py'), 'utf8');
+const queuesTarget = path.resolve(directory, 'maestro_queues.py');
+const queuesText = fs.readFileSync(path.join(__dirname, 'maestro_queues.py'), 'utf8');
+if (!updating && fs.existsSync(queuesTarget) && fs.readFileSync(queuesTarget, 'utf8') !== queuesText) throw Error('An existing maestro_queues.py differs. Review it before updating.');
 if (!updating && fs.existsSync(assetsTarget) && fs.readFileSync(assetsTarget, 'utf8') !== assetsText) throw Error('An existing maestro_assets.py differs. Review it before installing, then use --update.');
 if (!updating && fs.existsSync(target) && fs.readFileSync(target, 'utf8') !== moduleText) throw Error('An existing maestro_robot_jobs.py differs. Review it before installing, then use --update.');
 const pagePath = path.resolve(directory, 'src/components/RpaProcessesPage.jsx');
 const uiPath = path.resolve(directory, 'src/components/MaestroAssets.jsx');
 const uiText = fs.readFileSync(path.join(__dirname, 'maestro_ui/MaestroAssets.jsx'), 'utf8');
+const queueUiPath = path.resolve(directory, 'src/components/MaestroQueues.jsx');
+const queueUiText = fs.readFileSync(path.join(__dirname, 'maestro_ui/MaestroQueues.jsx'), 'utf8');
+if (!updating && fs.existsSync(queueUiPath) && fs.readFileSync(queueUiPath, 'utf8') !== queueUiText) throw Error('An existing MaestroQueues.jsx differs. Review it before updating.');
 if (!updating && fs.existsSync(uiPath) && fs.readFileSync(uiPath, 'utf8') !== uiText) throw Error('An existing MaestroAssets.jsx differs. Review it before updating.');
 let page = fs.existsSync(pagePath) ? fs.readFileSync(pagePath, 'utf8') : null;
 if (page && !page.includes('import MaestroAssets')) {
@@ -23,6 +30,13 @@ if (page && !page.includes('import MaestroAssets')) {
   const render = "activeTab === 'robots' ? <RobotsPage /> : (";
   if (!page.includes(imports) || !page.includes(tab) || !page.includes(render)) throw Error('Unrecognized Maestro RPA page. No files were changed.');
   page = page.replace(imports, imports + '\nimport MaestroAssets from "./MaestroAssets";').replace(tab, tab + "\n            { id: 'assets', label: 'Assets & Credentials' },").replace(render, "activeTab === 'robots' ? <RobotsPage /> : activeTab === 'assets' ? <MaestroAssets apiBase={API_BASE} /> : (");
+}
+if (page && !page.includes('import MaestroQueues')) {
+  const anchor = 'import MaestroAssets from "./MaestroAssets";';
+  const tab = "{ id: 'assets', label: 'Assets & Credentials' },";
+  const render = "activeTab === 'robots' ? <RobotsPage /> :";
+  if (!page.includes(anchor) || !page.includes(tab) || !page.includes(render)) throw Error('Unrecognized Maestro RPA page. No files were changed.');
+  page = page.replace(anchor, anchor + '\nimport MaestroQueues from "./MaestroQueues";').replace(tab, tab + "\n            { id: 'queues', label: 'Queues' },").replace(render, render + " activeTab === 'queues' ? <MaestroQueues apiBase={API_BASE} /> :");
 }
 if (!source.includes('import maestro_robot_jobs')) {
   for (const method of ['GET', 'POST']) {
@@ -34,6 +48,6 @@ if (!source.includes('import maestro_robot_jobs')) {
   if (!/^import department_store\r?$/m.test(source)) throw Error('Unrecognized Maestro imports. No files were changed.');
   source = source.replace(/^import department_store\r?$/m, 'import department_store\nimport maestro_robot_jobs');
 }
-fs.writeFileSync(assetsTarget, assetsText); fs.writeFileSync(target, moduleText); fs.writeFileSync(file, source);
-if (page) { fs.writeFileSync(uiPath, uiText); fs.writeFileSync(pagePath, page); }
+fs.writeFileSync(assetsTarget, assetsText); fs.writeFileSync(queuesTarget, queuesText); fs.writeFileSync(target, moduleText); fs.writeFileSync(file, source);
+if (page) { fs.writeFileSync(uiPath, uiText); fs.writeFileSync(queueUiPath, queueUiText); fs.writeFileSync(pagePath, page); }
 console.log('Installed Robot Jobs routes in ' + file + '. Restart/rebuild Maestro to activate them.');

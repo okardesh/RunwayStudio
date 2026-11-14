@@ -3,6 +3,7 @@ import { PACKAGE_PREFIX, validatePortablePackage, validateRobotWorkflow, type Po
 import { resolveTargetBindings } from '../../src/shared/uiTargets';
 import { resolveLogMessage } from '../../src/shared/logMessageExpression';
 import { executeAssetActivity, protectDerivedValues, type AssetResolver } from '../../src/shared/assets';
+import { executeQueueActivity, queueActivities, type QueueRunSession } from '../../src/shared/queues';
 import { evaluateBreakpointCondition } from '../../src/engine/breakpointCondition';
 
 export type RobotActivity = (id: string, props: Record<string, unknown>) => Promise<{ success: boolean; log: string; outputs?: Record<string, unknown> }>;
@@ -13,7 +14,7 @@ function legacyDefinition(input: any): WorkflowDefinition {
   return parseWorkflowDefinition(JSON.stringify({ projectName: input.projectName ?? 'Workflow', nodes: (input.nodes ?? []).map((node: any) => ({ ...node, data: { ...node.data, label: node.data?.label ?? node.id, properties: node.data?.properties ?? {}, isContainer: node.data?.isContainer ?? !!node.data?.childIds?.length } })), edges: input.edges ?? [], variables: (input.variables ?? []).map((v: any) => ({ id: v.id ?? v.name, type: v.type ?? 'Object', scope: v.scope ?? 'Main', ...v })), arguments: input.arguments ?? [], uiTargets: input.uiTargets ?? [] }));
 }
 export class RobotJobStoppedError extends Error { constructor() { super('Job stopped at an activity boundary.'); this.name = 'RobotJobStoppedError'; } }
-export interface RobotRunOptions { signal?: AbortSignal; live?: boolean; onSecret?: (value: string) => void; resolveAsset?: AssetResolver }
+export interface RobotRunOptions { signal?: AbortSignal; live?: boolean; onSecret?: (value: string) => void; resolveAsset?: AssetResolver; queueSession?: QueueRunSession }
 /** Resolves calls solely from the submitted package, never the Robot filesystem. */
 export async function executeRobotWorkflow(input: unknown, inputs: Record<string, unknown>, native: RobotActivity, onLog: (level: 'info' | 'error', message: string) => void, options: RobotRunOptions = {}): Promise<RobotWorkflowResult> {
   if (!input || typeof input !== 'object' || Array.isArray(input) || !inputs || typeof inputs !== 'object' || Array.isArray(inputs)) throw Error('Invalid workflow or job inputs.');
@@ -27,6 +28,7 @@ export async function executeRobotWorkflow(input: unknown, inputs: Record<string
   }
   const checkStop = () => { if (options.signal?.aborted) throw new RobotJobStoppedError(); };
   const definitions = manifest ? manifest.workflows.map(w => w.definition) : [definition];
+  if (!options.queueSession && definitions.some(d => d.nodes.some(n => queueActivities.includes(n.data.activityId)))) throw Error('This workflow requires a Maestro queue context. Run it from Robot Jobs.');
   if (!options.resolveAsset && definitions.some(d => d.nodes.some(n => ['get-asset', 'get-credential'].includes(n.data.activityId)))) throw Error('This workflow requires a Maestro asset context. Select an environment and start it from Robot Jobs.');
   checkStop();
   const secrets = new Set<string>(), events: Array<{ level: 'info' | 'error'; message: string }> = [];
@@ -66,9 +68,14 @@ export async function executeRobotWorkflow(input: unknown, inputs: Record<string
     const condition = (expression: string) => { const result = evaluateBreakpointCondition(expression, values); if (result.error) throw Error(`Invalid branch condition: ${result.error}`); return !!result.value; };
     const runNode = async (node: typeof nodes[number]): Promise<Flow> => {
       checkStop();
+      options.queueSession?.assertHealthy();
       if (++steps > 10000) throw Error('Robot activity execution limit reached (10,000).');
       const d = node.data, p = d.properties, id = d.activityId;
       collect(p, true); emit('info', `Starting ${name} / ${d.label}`);
+      if (queueActivities.includes(id)) {
+        const outputs = await executeQueueActivity(id, p, values, options.queueSession, [...secrets]);
+        checkStop(); Object.assign(values, outputs); emit('info', 'Central queue operation completed.'); return 'normal';
+      }
       if (id === 'get-asset' || id === 'get-credential') {
         const outputs = await executeAssetActivity(id, p, options.resolveAsset, value => { secrets.add(value); options.onSecret?.(value); });
         checkStop(); Object.assign(values, outputs);
@@ -135,7 +142,7 @@ export async function executeRobotWorkflow(input: unknown, inputs: Record<string
         const resolved = Object.fromEntries(Object.entries(p).map(([key, value]) => [key, ['output','to'].includes(key) || id === 'log-message' && key === 'message' ? value : typeof value === 'string' && value.includes('{{') ? resolveArgumentInput(value, values).value : value]));
         if (id === 'log-message') resolved.message = resolveLogMessage(p.message, values);
         protectDerivedValues(p, resolved, values, [...secrets], value => { secrets.add(value); options.onSecret?.(value); });
-        const result = await native(id, resolved); checkStop(); collect(result.outputs); emit(result.success ? 'info' : 'error', result.log);
+        const result = await native(id, resolved); checkStop(); options.queueSession?.assertHealthy(); collect(result.outputs); emit(result.success ? 'info' : 'error', result.log);
         if (!result.success) throw Error(result.log || `Activity failed: ${id}`);
         Object.assign(values, result.outputs ?? {}); collect(values);
       }

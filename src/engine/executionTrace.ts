@@ -38,6 +38,7 @@ export function createExecutionTrace(nodes: Node<WorkflowNodeData>[], variables:
   publish();
   return {
     runId: run.id,
+    transactions(events: import('../shared/queues').TransactionEvent[]) { run.transactions = events.slice(-200).map(e => clean(e) as import('../shared/queues').TransactionEvent); },
     secrets,
     runtime(values: Record<string, unknown>) {
       runtimeValues = values; collectSecrets(values);

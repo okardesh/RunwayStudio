@@ -1,0 +1,8 @@
+.app .bottom-panel.bottom-panel--queues { height:clamp(340px,48vh,550px); }
+.transaction-history { margin:12px 16px; }
+.transaction-history>div { display:flex;flex-direction:column;gap:5px;padding:9px 0;border-bottom:1px solid var(--studio-border);overflow-wrap:anywhere; }
+.transaction-history small { color:var(--studio-muted); }
+.queue-templates { display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 14px;border-bottom:1px solid var(--studio-border);font-size:11px; }
+.queue-templates input,.queue-templates button { font:inherit;border:1px solid var(--studio-border);border-radius:5px;padding:6px 8px;background:var(--studio-panel);color:var(--studio-text); }
+.queue-templates button:disabled { opacity:.45; }
+.queue-templates small { color:var(--studio-muted); }

@@ -3,6 +3,7 @@ import { useExecutionHistoryStore, type ExecutionStep } from '../../store/execut
 import { useWorkflowStore } from '../../store/workflowStore';
 import { useUiStore } from '../../store/uiStore';
 import './RunHistoryPanel.css';
+import { TransactionHistory } from '../Queues/TransactionHistory';
 import { RobotJobDetails } from '../RobotJobs/RobotJobsPanel';
 
 const duration = (start: number, end?: number) => end === undefined ? 'In progress' : `${Math.max(0, end - start).toLocaleString()} ms`;
@@ -67,6 +68,7 @@ export function RunHistoryPanel() {
           </button>)}
         </section>
         <section className="rh-detail" aria-label="Activity details">
+          <TransactionHistory events={run.transactions} />
           {run.environment && <div className="rh-notice">Environment: {run.environment.name}</div>}
           {run.robotJob && <RobotJobDetails job={run.robotJob} />}
           {(run.parentRunId || children.length > 0) && <div className="rh-call-links" aria-label="Workflow call links">{run.parentRunId && <button disabled={!parentRun} onClick={() => parentRun && selectRun(parentRun.id)}>Caller: {parentRun?.projectName ?? 'Not retained in history'}</button>}{children.map((child) => <button key={child.id} onClick={() => selectRun(child.id)}>Called: {child.projectName} · {child.status}</button>)}</div>}

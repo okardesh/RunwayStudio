@@ -6,6 +6,7 @@ import { jobIsTerminal, type RobotJobCatalog } from '../../shared/robotJobs';
 import { useRobotJobsStore, pollRobotJobs, stopRobotJob, robotJobHistoryId } from '../../store/robotJobsStore';
 import { useUiStore } from '../../store/uiStore';
 import './RobotJobsPanel.css';
+import { TransactionHistory } from '../Queues/TransactionHistory';
 import { useAssetsStore } from '../../store/assetsStore';
 
 export function RobotJobsMonitor({ connection }: { connection: RunwayConnection | null }) {
@@ -80,6 +81,7 @@ export function RobotJobsPanel({ connection }: { connection: RunwayConnection | 
         {!loading && !catalog.packages.length && connection && !error && <p>No portable package versions are available. Prepare and publish a package first.</p>}
         {!!catalog.environments?.length && <label>Environment<select aria-label="Job environment" value={environmentId} disabled={launching || !!pending} onChange={e => setEnvironmentId(e.target.value)}>{catalog.environments.map(p => <option key={p.id} value={p.id} disabled={!p.enabled}>{p.name}{p.enabled ? '' : ' · Disabled'}</option>)}</select></label>}
         {!!pkg?.requiredAssets?.length && <small>Required assets: {pkg.requiredAssets.map(a => a.name + ' (' + a.type + ')').join(', ')}</small>}
+        {!!pkg?.requiredQueues?.length && <small>Required queues: {pkg.requiredQueues.map(q => q.name).join(', ')}</small>}
         <strong>In arguments</strong>
         {pkg?.inputArguments.length === 0 && <small>This package has no In arguments.</small>}
         {pkg?.inputArguments.map(a => <label key={a.name}>{a.name} <small>{a.type}{a.required ? ' · required' : ' · optional'}</small><input aria-label={`Input ${a.name}`} type={/password|secret|token|api.?key|credential/i.test(a.name) ? 'password' : 'text'} autoComplete="off" spellCheck={false} placeholder={['String','DateTime'].includes(a.type) ? a.type : 'JSON value'} value={values[a.name] ?? ''} disabled={launching || !!pending} onChange={e => setValues(v => ({ ...v, [a.name]: e.target.value }))} /></label>)}
@@ -103,7 +105,7 @@ export function RobotJobsPanel({ connection }: { connection: RunwayConnection | 
   </div>;
 }
 export function RobotJobDetails({ job }: { job: import('../../store/robotJobsStore').RemoteJob }) {
-  return <>{job.environment && <div className="rj-notice">Environment: {job.environment.name}</div>}<small className="rj-package-id">Package {job.version} · {job.packageId}</small>
+  return <><TransactionHistory events={job.transactions} />{job.environment && <div className="rj-notice">Environment: {job.environment.name}</div>}<small className="rj-package-id">Package {job.version} · {job.packageId}</small>
     {job.error && <div className="rj-notice rj-error">{job.error}</div>}
     <details><summary>In / Out arguments</summary><pre>{JSON.stringify({ In: job.inputPreview, Out: job.outputs ?? {} }, null, 2)}</pre></details>
     {!!job.workflowCalls?.length && <details><summary>Workflow calls</summary>{job.workflowCalls.map((c, i) => <div key={i} style={{ paddingLeft: Math.min(c.depth, 16) * 12 }}>{c.name} · {c.status}</div>)}</details>}

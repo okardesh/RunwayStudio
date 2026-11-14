@@ -7,6 +7,7 @@ export const robotActivities = new Set([
   'wait-element','wait-element-vanish','wait-page-load','wait-text','element-exists','assert-text','assert-title','assert-url',
   'write-line','log-message','delay','run-script-file','run-script-code','assign','throw','create-folder','get-files','copy-file','move-file','delete-file','read-file','write-file','read-csv','write-csv','read-pdf','ocr-image','ocr-pdf',
   'connect-m365','outlook-send-email','outlook-get-emails','onedrive-upload-file','onedrive-download-file','m365-graph-request','http-request','json-deserialize',
+  'add-queue-item','get-transaction-item','set-transaction-status',
   'get-asset','get-credential',
   'invoke-workflow','sequence','if','for-each','try-catch','retry-scope','break','continue','create-list','add-to-collection','remove-from-collection','clear-collection',
 ]);

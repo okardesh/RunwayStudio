@@ -9,6 +9,7 @@ import type { RobotWorkflowResult } from './workflowRuntime';
 import { RobotJobRegistry, type RobotTrigger } from './jobRegistry';
 import type { RobotJobView } from '../../src/shared/robotJobs';
 import { robotAssetResolver } from './assetsClient';
+import { robotQueueSession } from './queuesClient';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.join(__dirname, '..');
@@ -42,7 +43,8 @@ const jobs = new RobotJobRegistry(executeActivity, async (trigger, view, result)
   await report(trigger, view.status as 'success' | 'failed' | 'stopped', view.logs, view.error, result, view);
   refreshTray();
   new Notification({ title: 'Runway Robot', body: `Job ${view.jobId}: ${view.status}` }).show();
-}, (trigger, signal) => connection ? robotAssetResolver(trigger, connection.serverUrl, connection.apiKey, signal) : undefined);
+}, (trigger, signal) => connection ? robotAssetResolver(trigger, connection.serverUrl, connection.apiKey, signal) : undefined,
+(trigger, signal) => connection ? robotQueueSession(trigger, connection.serverUrl, connection.apiKey, signal) : undefined);
 let connection: { serverUrl: string; apiKey: string; deviceName: string } | null = null;
 
 function logoPath() {

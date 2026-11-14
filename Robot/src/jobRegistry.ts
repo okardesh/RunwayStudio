@@ -1,6 +1,7 @@
 import { executeRobotWorkflow, RobotJobStoppedError, type RobotActivity, type RobotWorkflowResult } from './workflowRuntime';
 import { createHash } from 'node:crypto';
 import type { AssetResolver } from '../../src/shared/assets';
+import type { QueueRunSession } from '../../src/shared/queues';
 import { jobIsTerminal, jobSecrets, redactJobValue, type RobotJobView } from '../../src/shared/robotJobs';
 
 export interface RobotTrigger {
@@ -15,7 +16,7 @@ export class RobotJobRegistry {
   private entries = new Map<string, Entry>();
   private queue: Entry[] = [];
   private active: Entry | undefined;
-  constructor(private native: RobotActivity, private complete: (trigger: RobotTrigger, view: RobotJobView, result?: RobotWorkflowResult) => Promise<void>, private resolver?: (trigger: RobotTrigger, signal: AbortSignal) => AssetResolver | undefined) {}
+  constructor(private native: RobotActivity, private complete: (trigger: RobotTrigger, view: RobotJobView, result?: RobotWorkflowResult) => Promise<void>, private resolver?: (trigger: RobotTrigger, signal: AbortSignal) => AssetResolver | undefined, private queueFactory?: (trigger: RobotTrigger, signal: AbortSignal) => QueueRunSession | undefined) {}
   get running() { return !!this.active; }
   get queued() { return this.queue.length; }
   get(jobId: string): RobotJobView | undefined {
@@ -69,21 +70,30 @@ export class RobotJobRegistry {
     if (this.active) return;
     const entry = this.queue.shift(); if (!entry) return;
     this.active = entry; entry.view.status = 'running';
+    let queues: QueueRunSession | undefined;
+    let outcome: 'success' | 'failed' | 'stopped' = 'failed';
     try {
       this.log(entry, 'info', 'Robot started the job.');
       const { trigger } = entry;
+      queues = this.queueFactory?.(trigger, entry.controller.signal);
       const definition = trigger.definition ?? (trigger.workflow && 'definition' in trigger.workflow ? trigger.workflow.definition : trigger.workflow);
-      entry.result = await executeRobotWorkflow(definition, trigger.inputs ?? {}, this.native, (level, message) => this.log(entry, level, message), { signal: entry.controller.signal, live: true, onSecret: secret => entry.secrets.add(secret), resolveAsset: this.resolver?.(trigger, entry.controller.signal) });
-      entry.view.status = 'success'; entry.view.outputs = entry.result.outputs;
+      entry.result = await executeRobotWorkflow(definition, trigger.inputs ?? {}, this.native, (level, message) => this.log(entry, level, message), { signal: entry.controller.signal, live: true, onSecret: secret => entry.secrets.add(secret), resolveAsset: this.resolver?.(trigger, entry.controller.signal), queueSession: queues });
+      if (queues?.activeCount) throw Error('A claimed transaction has no committed result. Add Set Transaction Status.');
+      outcome = 'success'; entry.view.outputs = entry.result.outputs;
       jobSecrets(entry.result.outputs, entry.secrets);
       entry.view.package = entry.result.package; entry.view.workflowCalls = entry.result.calls;
       this.log(entry, 'info', 'Job completed successfully.');
     } catch (reason) {
       const stopped = reason instanceof RobotJobStoppedError;
-      entry.view.status = stopped ? 'stopped' : 'failed';
+      outcome = stopped ? 'stopped' : 'failed';
       entry.view.error = stopped ? undefined : reason instanceof Error ? reason.message : 'Workflow execution failed.';
       this.log(entry, stopped ? 'info' : 'error', stopped ? 'Job stopped at an activity boundary.' : entry.view.error!);
     } finally {
+      try { await queues?.close(); }
+      catch { this.log(entry, 'error', 'Transaction cleanup could not be confirmed; lease expiry will recover uncommitted work.'); if (outcome === 'success') { outcome = 'failed'; entry.view.error = 'Transaction cleanup could not be confirmed.'; } }
+      if (queues) entry.view.transactions = redactJobValue(queues.events, entry.secrets) as RobotJobView['transactions'];
+      // Pollers and Maestro must see the final transaction result before a terminal job.
+      entry.view.status = outcome;
       entry.view.completedAt = Date.now(); await this.notify(entry);
       // Inputs/definition are no longer retained after reporting.
       entry.trigger = { jobId: entry.trigger.jobId, callbackUrl: '' }; entry.result = undefined;

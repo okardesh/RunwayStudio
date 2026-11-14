@@ -25,6 +25,7 @@ export interface ExecutionRun {
   status: RunStatus;
   debug: boolean;
   environment?: { id: string; name: string };
+  transactions?: import('../shared/queues').TransactionEvent[];
   parentRunId?: string;
   rootRunId?: string;
   invocationNodeId?: string;

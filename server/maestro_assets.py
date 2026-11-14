@@ -137,16 +137,23 @@ def save_grant(conn, tenant, profile_id, refs, token, job_id):
     conn.execute('INSERT INTO studio_job_asset_grants VALUES (?,?,?,?,?,?)', (job_id, tenant, profile_id, hashlib.sha256(token.encode()).hexdigest(), json.dumps(refs), int(time.time() * 1000) + 86400000))
 
 
-def resolve_job(host, job_id, token, name, kind):
+def authorize_job(host, job_id, token):
     # The unguessable per-job capability is separate from Maestro's shared administrative API key.
     with database(host, 'default') as conn:
         row = conn.execute('SELECT tenant,profile_id,token_hash,refs,expires_at FROM studio_job_asset_grants WHERE job_id=?', (job_id,)).fetchone()
         if not row or not token or not hmac.compare_digest(hashlib.sha256(token.encode()).hexdigest(), row[2]) or row[4] < int(time.time() * 1000):
             raise AssetError('Invalid or expired job asset grant.')
         state = conn.execute('SELECT snapshot FROM studio_robot_jobs WHERE id=? AND organization_id=?', (job_id, row[0])).fetchone()
-        if not state or json.loads(state[0])['status'] in ('success', 'failed', 'stopped') or {'name': name, 'type': kind} not in json.loads(row[3]):
+        if not state or json.loads(state[0])['status'] in ('success', 'failed', 'stopped'):
             raise AssetError('This job cannot access that asset.')
-    return resolve(host, row[0], row[1], name, kind)
+    return {'tenant': row[0], 'profileId': row[1], 'refs': json.loads(row[3])}
+
+
+def resolve_job(host, job_id, token, name, kind):
+    grant = authorize_job(host, job_id, token)
+    if {'name': name, 'type': kind} not in grant['refs']:
+        raise AssetError('This job cannot access that asset.')
+    return resolve(host, grant['tenant'], grant['profileId'], name, kind)
 
 
 def handle(handler, method, parsed, host):

@@ -1,6 +1,7 @@
 import { loadWorkflowGraph, parseWorkflowDefinition, validateArguments, type WorkflowDefinition, type WorkflowLoader } from './invokedWorkflows';
 import { isUiTarget, resolveTargetBindings, type UiTarget } from './uiTargets';
 import { robotActivities } from './robotCapabilities';
+import { queueActivities, validateQueueActivity } from './queues';
 import { assetRequirement } from './assets';
 
 export const PACKAGE_PREFIX = 'package://';
@@ -28,6 +29,7 @@ export function validateRobotWorkflow(def: WorkflowDefinition) {
   if (!def.nodes.some((n) => !n.data.parentId)) throw Error('Workflow has no root activities.');
   for (const node of def.nodes) {
     const d = node.data;
+    if (queueActivities.includes(d.activityId)) validateQueueActivity(d.activityId, d.properties);
     if (['get-asset', 'get-credential'].includes(d.activityId)) assetRequirement(d.activityId, d.properties);
     if (!robotActivities.has(d.activityId)) throw Error(`Robot does not support activity: ${d.activityId}`);
     if (['if', 'for-each', 'try-catch', 'retry-scope'].includes(d.activityId) && !d.isContainer) throw Error(`Control activity must be a container: ${d.label}`);

@@ -3,6 +3,7 @@ import type { WorkflowArgument, WorkflowNodeData, WorkflowVariable } from '../ty
 import { getActivity } from '../activities/registry';
 import type { UiTarget } from '../shared/uiTargets';
 import { validateArguments, validArgumentName } from '../shared/invokedWorkflows';
+import { queueActivities, validateQueueActivity } from '../shared/queues';
 import { assetRequirement, type AssetCatalog } from '../shared/assets';
 
 export interface AnalysisSource { assets?: { profileId: string; catalog: AssetCatalog }; nodes: Node<WorkflowNodeData>[]; edges: Edge[]; variables: WorkflowVariable[]; arguments: WorkflowArgument[]; targets: UiTarget[]; projectName: string; filePath: string | null }
@@ -12,7 +13,7 @@ export interface AnalysisReport { signature: string; projectName: string; analyz
 const identifier = /^[A-Za-z_]\w*$/;
 const blank = (value: unknown) => value === undefined || value === null || typeof value === 'string' && !value.trim();
 const variableName = (value: unknown) => String(value ?? '').trim().replace(/^\{\{\s*|\s*\}\}$/g, '');
-const outputField = (name: string) => ['output', 'to', 'usernameOutput', 'passwordOutput'].includes(name);
+const outputField = (name: string) => ['output', 'to', 'usernameOutput', 'passwordOutput', 'hasItemOutput'].includes(name);
 
 /** Includes semantic edits, excluding selection, folding, execution state and canvas layout. */
 export function analysisSignature(source: AnalysisSource) {
@@ -52,6 +53,10 @@ export function analyzeWorkflow(source: AnalysisSource): AnalysisReport {
     if (!node.id || ids.has(node.id)) add('WA101', 'error', node, 'Structure', 'Activity IDs must be nonempty and unique.', 'Repair the duplicate or missing ID in the workflow definition.');
     ids.add(node.id);
     const activity = getActivity(node.data.activityId);
+    if (queueActivities.includes(node.data.activityId)) {
+      try { validateQueueActivity(node.data.activityId, node.data.properties); } catch (e) { add('WA410', 'error', node, 'Queue / outputs', e instanceof Error ? e.message : 'Invalid queue activity.', 'Use a static queue name and valid transaction/output variables.'); }
+      if (node.data.activityId === 'get-transaction-item' && !nodes.some(n => n.data.activityId === 'set-transaction-status' || n.data.activityId === 'invoke-workflow')) add('WA411', 'warning', node, 'Transaction result', 'This workflow claims work but has no Set Transaction Status activity.', 'Commit each claimed item. Uncommitted work is released with an Application failure at the end of the run.');
+    }
     if (['get-asset', 'get-credential'].includes(node.data.activityId)) {
       try {
         const ref = assetRequirement(node.data.activityId, node.data.properties);
