@@ -6,6 +6,7 @@ import './RunHistoryPanel.css';
 import { TransactionHistory } from '../Queues/TransactionHistory';
 import { HumanTaskHistory } from '../HumanTasks/HumanTaskHistory';
 import { RobotJobDetails } from '../RobotJobs/RobotJobsPanel';
+import { copyText } from '../../shared/clipboard';
 
 const duration = (start: number, end?: number) => end === undefined ? 'In progress' : `${Math.max(0, end - start).toLocaleString()} ms`;
 
@@ -17,6 +18,7 @@ export function RunHistoryPanel() {
   const [stepId, setStepId] = useState<string | null>(null);
   const [errorsOnly, setErrorsOnly] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
+  const [copyStatus, setCopyStatus] = useState('');
   useEffect(() => { setRunId(requestedRunId && runs.some((r) => r.id === requestedRunId) ? requestedRunId : runs[0]?.id ?? null); setStepId(null); }, [runs[0]?.id, requestedRunId]);
   const run = runs.find((r) => r.id === runId) ?? runs[0];
   const parentRun = runs.find((r) => r.id === run?.parentRunId);
@@ -24,6 +26,7 @@ export function RunHistoryPanel() {
   const selectRun = (id: string) => { setRunId(id); setStepId(null); useUiStore.setState({ selectedHistoryRunId: id }); };
   const steps = run?.steps.filter((s) => !errorsOnly || s.status === 'error') ?? [];
   const step = steps.find((s) => s.id === stepId) ?? steps.find((s) => s.status === 'error') ?? steps[0];
+  useEffect(() => { setCopyStatus(''); }, [run?.id, step?.id]);
   const sameWorkflow = run && !run.robotJob && (run.filePath ? run.filePath === workflow.filePath : run.projectName === workflow.projectName);
   const canReveal = (s: ExecutionStep) => sameWorkflow && workflow.nodes.some((n) => n.id === s.nodeId && n.data.activityId === s.activityId);
   const reveal = (s: ExecutionStep) => {
@@ -86,7 +89,7 @@ export function RunHistoryPanel() {
             <div className="rh-detail-heading"><strong>{step.label}</strong><button disabled={!canReveal(step)} onClick={() => reveal(step)}>Show on canvas</button></div>
             {!canReveal(step) && <div className="rh-notice">Open the original workflow to locate this activity. The saved details remain available.</div>}
             <p>{step.status} · {duration(step.startedAt, step.endedAt)} · {new Date(step.startedAt).toLocaleTimeString()}</p>
-            {step.error && <div className="rh-error" role="alert">{step.error}</div>}
+            {step.error && <div className="rh-error" role="alert"><div className="rh-error-actions"><button onClick={() => { void copyText(step.error!).then(copied => setCopyStatus(copied ? 'Copied' : 'Copy failed. Select the error and try Ctrl+C.')); }}>Copy error</button><span role="status">{copyStatus}</span></div><div className="rh-error-text">{step.error}</div></div>}
             <details open><summary>Inputs</summary><pre>{JSON.stringify(step.inputs, null, 2)}</pre></details>
             <details><summary>Runtime variables after activity</summary><pre>{JSON.stringify(step.outputs ?? {}, null, 2)}</pre></details>
             {step.screenshot && <button className="rh-image" onClick={() => setPreview(step.screenshot!)} title="Enlarge error screenshot"><img src={step.screenshot} alt={`Desktop at failure: ${step.label}`} /></button>}

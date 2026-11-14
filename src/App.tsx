@@ -20,6 +20,7 @@ import { applyStudioTheme, useThemeStore } from './store/themeStore';
 import { useUiTargetStore } from './store/uiTargetStore';
 import { resolveTargetBindings } from './shared/uiTargets';
 import { analyzeCurrentWorkflow } from './engine/analyzeCurrentWorkflow';
+import { copyText } from './shared/clipboard';
 
 type Tab = 'design' | 'debug';
 
@@ -99,6 +100,14 @@ function App() {
       }
 
       if (isEditableTarget(e.target)) return;
+      if (key === 'c') {
+        const text = window.getSelection()?.toString();
+        if (text) {
+          e.preventDefault();
+          void copyText(text).then(copied => { if (!copied) ui.setStatusMessage('Text could not be copied. Try again.'); });
+          return;
+        }
+      }
       if (key === 'c') { e.preventDefault(); workflow.copySelectedNode(); return; }
       if (key === 'x') { e.preventDefault(); workflow.cutSelectedNode(); return; }
       if (key === 'v') { e.preventDefault(); workflow.pasteNode(); return; }

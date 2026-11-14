@@ -42,6 +42,8 @@ span.rh-status { background: transparent; }
 .rh-run .rh-test-label.te-status--failed, .rh-run .rh-test-label.te-status--error { color: var(--studio-red); }
 .rh-run .rh-test-label.te-status--passed { color: var(--studio-green); }
 .rh-error { color: #a4262c; background: #fde7e9; border-left: 3px solid #a4262c; padding: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rh-error-actions { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; white-space: normal; }
+.rh-error-text { user-select: text; cursor: text; }
 .rh-notice { padding: 6px 10px; background: #fff4ce; color: #605000; font-size: 11px; }
 .rh-image { display: block; padding: 0; border: 1px solid #c8c6c4; background: #fff; margin: 8px 0; }
 .rh-image img { display: block; width: 100%; max-height: 160px; object-fit: contain; }

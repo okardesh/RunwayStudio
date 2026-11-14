@@ -99,6 +99,7 @@ async function main() {
   // Render the actual panel with an isolated fixture, without connecting to Runway.
   await esbuild.build({ stdin: { contents: `
     import React from 'react';
+    import App from './src/App';
     import {createRoot} from 'react-dom/client';
     import {BottomPanel} from './src/components/BottomPanel/BottomPanel';
     import {Toolbar} from './src/components/Toolbar/Toolbar';
@@ -108,9 +109,9 @@ async function main() {
     import {useUiStore} from './src/store/uiStore';
     import './src/App.css';
     window.fixture={history:useExecutionHistoryStore,workflow:useWorkflowStore,ui:useUiStore};
-    window.electronAPI={saveWorkflow:async()=>({path:'C:/fixture.rpa.json'}),executeActivity:async()=>({success:false,log:'Fixture target not found'})};
+    window.copiedText='';window.electronAPI={copyText:async text=>{if(window.copyFails)return false;window.copiedText=text;return true;},requestRunwayLicense:async()=>({status:200,body:JSON.stringify({ok:true,authenticated:true,canUseDevelopers:true,apiKey:'fixture'})}),getRunwayApiKey:async()=>'fixture',storeRunwayApiKey:async()=>true,getDotNetTypes:async()=>[],requestStudioAssets:async()=>({status:200,body:JSON.stringify({ok:true,profiles:[],assets:[]})}),saveWorkflow:async()=>({path:'C:/fixture.rpa.json'}),executeActivity:async()=>({success:false,log:'Fixture target not found'})};
     useUiStore.getState().setActiveBottomPanelTab('history');
-    createRoot(document.getElementById('root')).render(<div className="app"><Toolbar activeTab="design" onPublish={()=>{}}/><div className="app__body"><div className="app__workspace"><SequenceCanvas/></div><BottomPanel/></div></div>);
+    createRoot(document.getElementById('root')).render(<App/>);
   `, resolveDir: root, loader: 'tsx' }, bundle: true, platform: 'browser', outfile: path.join(out, 'panel.js'), define: { 'process.env.NODE_ENV': '"production"' } });
   fs.writeFileSync(path.join(out, 'index.html'), '<html><head><link rel="stylesheet" href="panel.css"></head><body style="margin:0;font-family:Segoe UI"><div id="root"></div><script src="panel.js"></script></body></html>');
   const { chromium } = require('playwright-core');
@@ -122,7 +123,7 @@ async function main() {
     await page.goto(pathToFileURL(path.join(out, 'index.html')).href);
     await page.getByText('No runs yet.', { exact: false }).waitFor();
     await page.evaluate(() => {
-      const step = { id: 'attempt-1', nodeId: 'node-1', label: 'Read invoice amount', activityId: 'get-text', startedAt: Date.now() - 234, endedAt: Date.now(), status: 'error', inputs: { selector: '#invoice-total' }, error: 'Target not found: #invoice-total', screenshotNote: 'Screenshot capture was disabled.' };
+      const step = { id: 'attempt-1', nodeId: 'node-1', label: 'Read invoice amount', activityId: 'get-text', startedAt: Date.now() - 234, endedAt: Date.now(), status: 'error', inputs: { selector: '#invoice-total' }, error: ['Target not found: #invoice-total','Selector: Esra'].join(String.fromCharCode(10)), screenshotNote: 'Screenshot capture was disabled.' };
       window.fixture.workflow.setState({ projectName: 'Invoice processing', filePath: null, nodes: [
         { id: 'parent', position: { x: 0, y: 0 }, data: { activityId: 'use-app-browser', label: 'Invoice application', properties: {}, childIds: ['node-1'], isContainer: true, collapsed: true } },
         { id: 'node-1', position: { x: 0, y: 0 }, data: { activityId: 'get-text', label: 'Read invoice amount', parentId: 'parent', properties: {} } }
@@ -133,6 +134,25 @@ async function main() {
     assert.equal(await page.evaluate(() => window.fixture.workflow.getState().selectedNodeId), 'node-1');
     assert.equal(await page.evaluate(() => window.fixture.workflow.getState().nodes[0].data.collapsed), false);
     await page.locator('.seq-canvas--history-error .seq-card--selected').waitFor();
+    const errorText = await page.locator('.rh-error-text').innerText();
+    await page.getByRole('button', { name: 'Copy error', exact: true }).click();
+    assert.equal(await page.evaluate(() => window.copiedText), errorText);
+    await page.getByRole('status').filter({ hasText: /^Copied$/ }).waitFor();
+    await page.evaluate(() => { window.copyFails=true; });
+    await page.getByRole('button', { name: 'Copy error', exact: true }).click();
+    await page.getByRole('status').filter({ hasText: /Copy failed/ }).waitFor();
+    await page.evaluate(() => {
+      window.copyFails=false;window.copiedText='';
+      const range=document.createRange();range.selectNodeContents(document.querySelector('.rh-error-text'));
+      const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);
+    });
+    await page.keyboard.press('Control+c');
+    await page.waitForFunction(text => window.copiedText === text, errorText);
+    assert.equal(await page.evaluate(() => window.fixture.workflow.getState().clipboard), null);
+    await page.evaluate(() => window.getSelection().removeAllRanges());
+    await page.keyboard.press('Control+c');
+    assert.equal(await page.evaluate(() => window.fixture.workflow.getState().clipboard.node.id), 'node-1');
+    console.log('PASS Copy error exact multiline text, clipboard failure feedback, selected text Ctrl+C and activity clipboard without text selection');
     await page.getByRole('checkbox', { name: 'Errors only', exact: true }).check();
     await page.screenshot({ path: path.join(out, 'history-panel.png') });
     await page.getByRole('button', { name: 'Clear history' }).click();

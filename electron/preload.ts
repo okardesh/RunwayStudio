@@ -3,6 +3,7 @@ import type { LicenseRequest, LicenseTransportResult } from '../src/shared/runwa
 
 contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
+  copyText: (text: string) => ipcRenderer.invoke('studio:copy-text', text) as Promise<boolean>,
   readInvokedWorkflow: (requested: string, callerPath: string | null) => ipcRenderer.invoke('workflow:read-invoked', requested, callerPath) as Promise<{ path: string; content: string }>,
   chooseInvokedWorkflow: () => ipcRenderer.invoke('workflow:choose-invoked') as Promise<{ cancelled: true } | { path: string; content: string }>,
   setStudioTheme: (theme: 'dark' | 'light') => ipcRenderer.invoke('studio:set-theme', theme) as Promise<boolean>,

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, ipcMain, desktopCapturer, dialog, safeStorage } from 'electron'
+import { app, BrowserWindow, Menu, ipcMain, desktopCapturer, dialog, safeStorage, clipboard } from 'electron'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -91,6 +91,11 @@ app.on('activate', () => {
 })
 
 app.whenReady().then(() => {
+  ipcMain.handle('studio:copy-text', (_event, text: unknown) => {
+    if (typeof text !== 'string' || text.length > 4_000_000) return false;
+    clipboard.writeText(text);
+    return true;
+  });
   registerStudioThemeIpc(ipcMain, () => win);
   registerRunwayLicenseIpc(ipcMain, () => win?.webContents);
   ipcMain.handle('runway:get-api-key', (_event, serverUrl: string) => {
