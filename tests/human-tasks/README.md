@@ -1,6 +1,6 @@
 # Human tasks and durable approval waits
 
-Studio's **Human Tasks** activity category adds **Create Human Task** and **Wait for Human Task**. Review tasks from **Tasks** in Studio's toolbar/bottom panel or **Human Tasks** on Maestro's RPA page.
+Studio's **Human Tasks** activity category adds **Create Human Task** and **Wait for Human Task**. Manage operators, review tasks and submit decisions from **RPA → Human Tasks** in Runway/Maestro. Studio contains only the workflow activities and their Debug/Run History integration; it has no Human Tasks management screen.
 
 ## First workflow
 
@@ -25,7 +25,7 @@ Form schemas support up to 20 unique fields. Approval requires mandatory fields;
 
 An administrative Maestro connection can view tenant tasks and manage operators. Decisions require a **personal task token**; an administrative key alone cannot approve. In **Operator administration**, create an ID/display name and roles, then issue a token. The token is displayed once, masked, and stored only as a hash on Maestro. Updating an operator rotates its token; disabled operators cannot decide. Users can act on tasks addressed to their own ID or current roles. Actor identity comes from the token, not editable form data. Decisions, creation, waits and timeouts have tenant-scoped audit records.
 
-Enter the personal token for the current panel session. It is not saved in browser preferences, workflow files, packages or Run History. Switching away from the Tasks panel clears its in-memory token. Maestro's existing administrative API-key and tenant policy still applies; this feature adds separate per-operator decision authorization.
+Enter the personal token for the current panel session. It is not saved in browser preferences, workflow files, packages or Run History. Switching away from the Runway Human Tasks panel clears its in-memory token. Maestro's existing administrative API-key and tenant policy still applies; this feature adds separate per-operator decision authorization.
 
 ## Durable execution
 
